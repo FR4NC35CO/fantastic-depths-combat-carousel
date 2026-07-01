@@ -1,0 +1,44 @@
+<div id="combat-carousel-dock" class="combat-carousel-dock {{directionClass}}">
+   {{#if isGM}}
+   <div class="carousel-controls left">
+      <button type="button" data-action="previous-turn" data-tooltip="{{localize 'FDCC.Controls.PrevTurn'}}">
+         <i class="fas fa-backward-step"></i>
+      </button>
+      <button type="button" data-action="previous-round" data-tooltip="{{localize 'FDCC.Controls.PrevRound'}}">
+         <i class="fas fa-backward"></i>
+      </button>
+   </div>
+   {{/if}}
+
+   <div id="carousel-combatants" class="carousel-combatants">
+      {{!-- Combatant cards injected here dynamically --}}
+   </div>
+
+   {{#if isGM}}
+   <div class="carousel-controls right">
+      <button type="button" data-action="next-turn" data-tooltip="{{localize 'FDCC.Controls.NextTurn'}}">
+         <i class="fas fa-forward-step"></i>
+      </button>
+      <button type="button" data-action="next-round" data-tooltip="{{localize 'FDCC.Controls.NextRound'}}">
+         <i class="fas fa-forward"></i>
+      </button>
+      <button type="button" data-action="roll-all" data-tooltip="{{localize 'FDCC.Controls.RollAll'}}">
+         <i class="fas fa-dice"></i>
+      </button>
+      <button type="button" data-action="roll-npc" data-tooltip="{{localize 'FDCC.Controls.RollNPC'}}">
+         <i class="fas fa-skull"></i>
+      </button>
+      <button type="button" data-action="start-combat" data-tooltip="{{localize 'FDCC.Controls.StartCombat'}}" style="{{#if combatStarted}}display:none{{/if}}">
+         <i class="fas fa-swords"></i>
+      </button>
+      <button type="button" data-action="end-combat" data-tooltip="{{localize 'FDCC.Controls.EndCombat'}}" style="{{#unless combatStarted}}display:none{{/unless}}">
+         <i class="fas fa-flag-checkered"></i>
+      </button>
+   </div>
+   {{/if}}
+
+   <div class="carousel-round-indicator">
+      <span class="round-label">{{localize 'FDCC.Round'}}</span>
+      <span class="round-number">{{round}}</span>
+   </div>
+</div>

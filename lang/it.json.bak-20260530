@@ -1,0 +1,45 @@
+{
+  "FDCC": {
+    "ModuleTitle": "Fantastic Depths Combat Carousel",
+    "Round": "Round",
+    "SelectAction": "Seleziona...",
+    "WarnActionsNotSelected": "Uno o più giocatori/PNG non hanno ancora selezionato un'azione di combattimento per questo round.",
+    "WarnRollNotAllowedHold": "In modalità Mantieni Iniziativa non è possibile tirare l'iniziativa. L'iniziativa rimane invariata dal round precedente.",
+    "WarnNoInitiative": "Tirare l'iniziativa per i combattenti per iniziare il round.",
+    "WarnActionsAndInitiative": "Dichiarare tutte le azioni di combattimento e tirare l'iniziativa prima di iniziare il combattimento.",
+    "TieRerollBlockedPendingInitiatives": "Tutti i combattenti devono tirare l'iniziativa prima di risolvere le contese.",
+    "EditInit": {
+      "Title": "Init: {name}",
+      "Confirm": "Conferma",
+      "GroupHint": "* tutti con init {value}"
+    },
+    "WarnDiceFaces": "Il numero di combattenti supera le facce del dado iniziativa. Incrementare le facce del dado iniziativa nelle impostazioni di FaDe per diminuire il rischio di punteggi uguali garantiti.",
+    "Controls": {
+      "PrevTurn": "Turno Precedente",
+      "NextTurn": "Turno Successivo",
+      "PrevRound": "Round Precedente",
+      "NextRound": "Round Successivo",
+      "RollAll": "Tira Iniziativa Tutti",
+      "RollNPC": "Tira Iniziativa NPC",
+      "RollPCs": "Tira Iniziativa PG",
+      "RollMyInit": "Tira Iniziativa",
+      "ResetInitiative": "Resetta Iniziativa",
+      "StartCombat": "Inizia Combattimento",
+      "EndCombat": "Termina Combattimento"
+    },
+    "Actions": {
+      "wrestle": "Lotta",
+      "nothing": "Niente"
+    },
+    "Settings": {
+      "PortraitSizeName": "Dimensione immagini PG/PNG",
+      "PortraitSizeHint": "",
+      "ShowHPBarName": "Mostra barre Punti Ferita",
+      "ShowHPBarHint": "",
+      "ShowHPBarToPlayersName": "Mostra le barre dei PF ai giocatori",
+      "ShowHPBarToPlayersHint": "",
+      "ShowActionDropdownName": "Mostra Azione Dichiarata",
+      "ShowActionDropdownHint": ""
+    }
+  }
+}

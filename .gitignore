@@ -1,0 +1,16 @@
+# Node
+node_modules/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.windsurf/
+
+# Dev notes (not needed for module functionality)
+VERSION
+*.zip
+backups/

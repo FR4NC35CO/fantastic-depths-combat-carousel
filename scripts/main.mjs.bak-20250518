@@ -1,0 +1,343 @@
+import { CombatCarousel } from './CombatCarousel.mjs';
+import { registerSettings } from './settings.mjs';
+
+export const MODULE_ID = 'fantastic-depths-combat-carousel';
+
+Hooks.once('init', () => {
+  console.log(`${MODULE_ID} | Initializing`);
+  registerSettings();
+});
+
+Hooks.on('closeSettingsConfig', () => {
+  if (ui.combatCarousel?.rendered) ui.combatCarousel._updateRoundIndicator();
+});
+
+Hooks.once('ready', () => {
+  console.log(`${MODULE_ID} | Ready`);
+  // Patch FaDe's Combatant subclass roundReset to preserve player-chosen actions.
+  // FaDe defines roundReset on its own subclass (class ti extends Combatant),
+  // accessible via CONFIG.Combatant.documentClass.prototype at ready time.
+  // It resets declaredAction to weapon default ("attack"/"fire") on every round change.
+  const FadeCombatantProto = CONFIG.Combatant.documentClass.prototype;
+  // Patch FaDe's isSlowed getter to guard against undefined actor.system.combat.phase.
+  // FaDe's fadeCombatant.ts:70 crashes when combat or phase is undefined (e.g. NPCs without full actor data).
+  const isSlowedDescriptor = Object.getOwnPropertyDescriptor(FadeCombatantProto, 'isSlowed');
+  if (isSlowedDescriptor?.get) {
+    const origIsSlowed = isSlowedDescriptor.get;
+    Object.defineProperty(FadeCombatantProto, 'isSlowed', {
+      get() {
+        try { return origIsSlowed.call(this); } catch(e) { return false; }
+      },
+      configurable: true
+    });
+    console.log(`${MODULE_ID} | Patched FaDe Combatant.isSlowed getter with null-guard`);
+  }
+  if (typeof FadeCombatantProto.roundReset === 'function') {
+    const origRoundReset = FadeCombatantProto.roundReset;
+    FadeCombatantProto.roundReset = async function(deleteAction = false) {
+      const carousel = ui.combatCarousel;
+      let savedAction = null;
+      let choseNothing = false;
+      let nextRound = 'reset';
+      try { nextRound = game.settings.get(game.system.id, 'nextRound') ?? 'reset'; } catch(e) {}
+      if (carousel && !deleteAction) {
+        savedAction = this.actor?.system?.combat?.declaredAction ?? null;
+        choseNothing = this.getFlag('fantastic-depths-combat-carousel', 'choseNothing') ?? false;
+        console.log(`FDCC | roundReset patch | ${this.name} | savedAction=${savedAction} choseNothing=${choseNothing} nextRound=${nextRound}`);
+      }
+      if (carousel && !deleteAction) {
+        if (nextRound === 'hold') {
+          // hold: call origRoundReset normally then restore the saved action
+          await origRoundReset.call(this, false);
+          if (choseNothing) {
+            console.log(`FDCC | roundReset patch | ${this.name} | hold — restoring choseNothing + null`);
+            await Promise.all([
+              this.setFlag('fantastic-depths-combat-carousel', 'choseNothing', true),
+              this.actor?.update({ 'system.combat.declaredAction': null })
+            ]);
+          } else if (savedAction && savedAction !== 'nothing') {
+            console.log(`FDCC | roundReset patch | ${this.name} | hold — restoring action=${savedAction}`);
+            await this.actor?.update({ 'system.combat.declaredAction': savedAction });
+          } else {
+            console.log(`FDCC | roundReset patch | ${this.name} | hold — no action to restore`);
+          }
+        } else {
+          // reset/reroll: call origRoundReset with deleteAction=TRUE so FaDe itself writes null
+          // This avoids the race condition where FaDe writes "attack" after our null.
+          console.log(`FDCC | roundReset patch | ${this.name} | ${nextRound} — calling origRoundReset(true) so FaDe writes null`);
+          if (choseNothing) await this.unsetFlag('fantastic-depths-combat-carousel', 'choseNothing');
+          await origRoundReset.call(this, true);
+        }
+      } else {
+        await origRoundReset.call(this, deleteAction);
+      }
+    };
+    console.log(`${MODULE_ID} | Patched FaDe Combatant.roundReset on CONFIG.Combatant.documentClass.prototype`);
+  } else {
+    console.warn(`${MODULE_ID} | roundReset not found on CONFIG.Combatant.documentClass.prototype — patch skipped`);
+  }
+
+  // Patch FaDe's Combat.nextRound to block automatic rollInitiative in 'reroll' mode
+  // when the carousel is active. The carousel will trigger the roll via _autoRollIfReady()
+  // only after all players have chosen their actions.
+  const FadeCombatProto = CONFIG.Combat.documentClass.prototype;
+  if (typeof FadeCombatProto.nextRound === 'function') {
+    const origNextRound = FadeCombatProto.nextRound;
+    FadeCombatProto.nextRound = async function() {
+      const carousel = ui.combatCarousel;
+      const isReroll = this.nextRoundMode === 'reroll';
+      const isReset = this.nextRoundMode === 'reset';
+      const isHold = this.nextRoundMode === 'hold';
+      if (carousel && (isReroll || isReset || isHold)) {
+        // Mark all combatants as "pending re-selection" so the carousel shows yellow
+        carousel._resetPendingIds = new Set(Array.from(this.combatants).map(c => c.id));
+        // Block updateActor hook from removing combatants during FaDe's roundReset calls
+        carousel._roundChanging = true;
+        // Clear any pending tie rerolls from the previous round so deferred _fixTurnToHighestInit
+        // callbacks (still in setTimeout queues) abort immediately and don't fire combat.update
+        carousel._pendingTieRerolls?.clear();
+        console.log(`FDCC | nextRound patch | _resetPendingIds populated (${carousel._resetPendingIds.size}) for mode=${this.nextRoundMode}`);
+      }
+      let result;
+      // Note: roundReset patch calls origRoundReset(true) for reset/reroll → FaDe writes null directly
+      if (carousel && isReroll) {
+        // Block FaDe's automatic rollInitiative — carousel triggers it via _autoRollIfReady()
+        const origRollInitiative = this.rollInitiative.bind(this);
+        this.rollInitiative = async () => {
+          console.log(`FDCC | nextRound patch | blocked FaDe auto-rollInitiative in reroll mode`);
+        };
+        result = await origNextRound.call(this);
+        this.rollInitiative = origRollInitiative;
+      } else {
+        result = await origNextRound.call(this);
+      }
+      if (carousel && (isReroll || isReset || isHold)) {
+        // Keep _roundResetting=true until the carousel detects all actions selected.
+        // It will be cleared by _autoRollIfReady or by setupCombatants when actions are chosen.
+        // Do a deferred refresh so the UI shows yellow cards.
+        setTimeout(() => {
+          carousel._roundChanging = false;
+          console.log(`FDCC | nextRound patch | deferred refresh after round change`);
+          carousel.refreshCards();
+        }, 300);
+      }
+      return result;
+    };
+    console.log(`${MODULE_ID} | Patched FaDe Combat.nextRound on CONFIG.Combat.documentClass.prototype`);
+  } else {
+    console.warn(`${MODULE_ID} | nextRound not found on CONFIG.Combat.documentClass.prototype — patch skipped`);
+  }
+  // Socket handler: GM executes combatant initiative updates on behalf of players
+  const socketName = `module.${MODULE_ID}`;
+  console.log(`FDCC | registering socket listener on: ${socketName}`);
+  game.socket.on(socketName, async (msg) => {
+    console.log(`FDCC | socket received:`, msg);
+    // removePendingId is handled by all clients (GM and non-GM)
+    if (msg.action === 'removePendingId') {
+      const carousel = ui.combatCarousel;
+      const combat = game.combats.get(msg.combatId);
+      if (carousel && combat && ui.combatCarousel?.combat === combat) {
+        if (carousel._resetPendingIds?.has(msg.combatantId)) {
+          carousel._resetPendingIds.delete(msg.combatantId);
+          console.log(`FDCC | socket | removePendingId | removed (${carousel._resetPendingIds.size} remaining)`);
+          carousel.refreshCards();
+        }
+      }
+      return;
+    }
+    // clearAllPendingIds: GM auto-rolled (all actions already chosen from prev round), tell clients to exit yellow state
+    if (msg.action === 'clearAllPendingIds') {
+      if (!game.user.isGM) {
+        const carousel = ui.combatCarousel;
+        const combat = game.combats.get(msg.combatId);
+        if (carousel && combat && carousel.combat === combat) {
+          carousel._resetPendingIds?.clear();
+          console.log(`FDCC | socket | clearAllPendingIds | cleared pending IDs on client`);
+          carousel.refreshCards();
+        }
+      }
+      return;
+    }
+    // syncTieRerolls / clearTieRerolls: handled by non-GM clients to show orange tie indicator
+    if (msg.action === 'syncTieRerolls') {
+      if (!game.user.isGM) {
+        const carousel = ui.combatCarousel;
+        const combat = game.combats.get(msg.combatId);
+        if (carousel && combat && carousel.combat === combat) {
+          if (msg.round != null && msg.round !== combat.round) return;
+          carousel._pendingTieRerolls = new Set(msg.ids);
+          console.log(`FDCC | socket | syncTieRerolls | ids=${msg.ids.length} round=${msg.round}`);
+          carousel.refreshCards();
+        }
+      }
+      return;
+    }
+    if (msg.action === 'clearTieRerolls') {
+      if (!game.user.isGM) {
+        const carousel = ui.combatCarousel;
+        const combat = game.combats.get(msg.combatId);
+        if (carousel && combat && carousel.combat === combat) {
+          if (msg.round != null && msg.round !== combat.round) {
+            console.log(`FDCC | socket | clearTieRerolls | IGNORED stale round=${msg.round} current=${combat.round}`);
+            return;
+          }
+          carousel._pendingTieRerolls.clear();
+          console.log(`FDCC | socket | clearTieRerolls | round=${msg.round}`);
+          carousel.refreshCards();
+        }
+      }
+      return;
+    }
+    if (!game.user.isGM) return;
+    const combat = game.combats.get(msg.combatId);
+    if (!combat) return;
+    if (msg.action === 'setGroupInitiative') {
+      console.log(`FDCC | socket | setGroupInitiative | ids=`, msg.ids, `value=`, msg.value);
+      await Promise.all(msg.ids.map(id => combat.combatants.get(id)?.update({ initiative: msg.value })));
+    } else if (msg.action === 'setSortedTurnIdx') {
+      console.log(`FDCC | socket | setSortedTurnIdx | value=`, msg.value);
+      await combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', msg.value);
+      if (ui.combatCarousel?.combat === combat) {
+        ui.combatCarousel._sortedTurnIdx = msg.value;
+        ui.combatCarousel.refreshCards();
+      }
+    }
+  });
+
+  // Prevent PlayerCombatForm from auto-opening for players
+  if (!game.user.isGM) {
+    // The FaDe system opens PlayerCombatForm via socket "showPlayerCombat"
+    // which does: foundry.applications.instances.get("party-combat-form") ?? new Ve).render(true)
+    // We register a dummy app instance with that ID so the system finds it and calls render() on it (no-op)
+    const FADE_COMBAT_FORM_ID = 'party-combat-form';
+
+    // Close existing instance if any
+    const existing = foundry.applications.instances.get(FADE_COMBAT_FORM_ID);
+    if (existing) {
+      try { existing.close(); } catch (e) {}
+    }
+
+    // Create a dummy object that mimics an ApplicationV2 just enough
+    const dummyApp = {
+      id: FADE_COMBAT_FORM_ID,
+      render() { return this; },
+      close() { return this; },
+      rendered: false,
+      options: { id: FADE_COMBAT_FORM_ID }
+    };
+
+    // Register it in foundry's application instances map
+    foundry.applications.instances.set(FADE_COMBAT_FORM_ID, dummyApp);
+
+    // Also trap game.fade.combatForm
+    if (game.fade) {
+      Object.defineProperty(game.fade, 'combatForm', {
+        get() { return dummyApp; },
+        set(v) { /* ignore */ },
+        configurable: true
+      });
+    }
+
+    console.log(`${MODULE_ID} | PlayerCombatForm suppression active (dummy registered as ${FADE_COMBAT_FORM_ID})`);
+  }
+
+  const currentCombat = game.combat;
+  if (currentCombat) {
+    new CombatCarousel(currentCombat).render(true);
+  }
+});
+
+Hooks.on('createCombat', (combat) => {
+  if (game.combat === combat) {
+    new CombatCarousel(combat).render(true);
+  }
+});
+
+Hooks.on('updateCombat', (combat, updates) => {
+  if (updates.active || updates.scene === null) {
+    new CombatCarousel(combat).render(true);
+  }
+  if (updates.scene && combat.scene !== game.scenes?.viewed && ui.combatCarousel?.combat === combat) {
+    ui.combatCarousel.close();
+  }
+});
+
+Hooks.on('deleteCombat', (combat) => {
+  if (ui.combatCarousel?.combat === combat) {
+    ui.combatCarousel.close();
+  }
+});
+
+Hooks.on('createCombatant', () => {
+  ui.combatCarousel?.setupCombatants();
+});
+
+Hooks.on('deleteCombatant', () => {
+  ui.combatCarousel?.setupCombatants();
+});
+
+Hooks.on('updateCombatant', (combatant, updates) => {
+  if (!ui.combatCarousel) return;
+  if ('initiative' in updates || 'hidden' in updates) {
+    ui.combatCarousel.setupCombatants();
+    // After initiative reroll resolves duplicates, reset turn order (GM only)
+    // detectTies() is called AFTER this block so _pendingTieRerolls still reflects pre-update state
+    if ('initiative' in updates && game.user.isGM && ui.combatCarousel.combat?.started) {
+      const mode = ui.combatCarousel.initiativeMode;
+      if (mode === 'individualChecklist') {
+        // Defer so Foundry finishes re-sorting combat.turns after all initiative updates settle
+        const roundAtSchedule = ui.combatCarousel.combat?.round;
+        setTimeout(() => {
+          const carousel = ui.combatCarousel;
+          if (!carousel) return;
+          // Abort if round changed since this timeout was scheduled, or round is changing, or ties pending
+          if (carousel.combat?.round !== roundAtSchedule) return;
+          if (carousel._roundChanging) return;
+          if (carousel._pendingTieRerolls?.size > 0) return;
+          const initiatives = carousel.combat.combatants.map(c => c.initiative).filter(i => i != null);
+          const allRolled = initiatives.length === carousel.combat.combatants.size;
+          const hasDuplicates = initiatives.length !== new Set(initiatives).size;
+          if (allRolled && !hasDuplicates) {
+            const sorted = carousel.sortedCombatants;
+            const firstCombatant = sorted[0];
+            if (firstCombatant) {
+              const combat = carousel.combat;
+              const turnIdx = combat.turns.findIndex(c => c.id === firstCombatant.id);
+              console.log(`FDCC | updateCombatant | turn fix | first=${firstCombatant.name} turnIdx=${turnIdx} currentTurn=${combat.turn} | turns[0]=${combat.turns[0]?.name}`);
+              if (turnIdx >= 0 && turnIdx !== combat.turn) combat.update({ turn: turnIdx });
+            }
+          }
+        }, 500);
+      } else if (mode === 'group' || mode === 'advancedGroup') {
+        // In group mode the carousel tracks its own sorted index (_sortedTurnIdx)
+        // No need to update combat.turn — just refresh the carousel display
+        ui.combatCarousel.setupCombatants();
+      }
+    }
+    // Detect ties AFTER the turn-order block so _pendingTieRerolls reflects pre-update state there
+    // Use debounce to prevent race conditions during initiative rerolls
+    if ('initiative' in updates && ui.combatCarousel.initiativeMode === 'individualChecklist') {
+      clearTimeout(ui.combatCarousel._detectTiesTimeout);
+      ui.combatCarousel._detectTiesTimeout = setTimeout(() => ui.combatCarousel.detectTies(), 100);
+    }
+  } else {
+    ui.combatCarousel.updateSingleCard(combatant);
+  }
+});
+
+Hooks.on('updateActor', (actor, changes) => {
+  if (!ui.combatCarousel?.rendered) return;
+  // HP changes: just refresh cards (lightweight)
+  if (changes.system?.hp !== undefined || changes.system?.attributes?.hp !== undefined) {
+    ui.combatCarousel.refreshCards();
+  }
+  // declaredAction changes: handled by CombatCarousel._setHooks updateActor handler
+});
+
+Hooks.on('hoverToken', (token, hover) => {
+  if (!ui.combatCarousel?.rendered) return;
+  const card = ui.combatCarousel.element?.querySelector(
+    `.combatant-card[data-token-id="${token.document?.id ?? token.id}"]`
+  );
+  if (card) card.classList.toggle('hovered', hover);
+});

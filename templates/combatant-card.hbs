@@ -1,0 +1,31 @@
+<div class="combatant-card {{cssClass}}" data-combatant-id="{{combatantId}}" data-token-id="{{tokenId}}">
+   <div class="card-portrait" style="background-image: url('{{img}}')">
+      {{#if isActive}}
+      <div class="active-indicator"></div>
+      {{/if}}
+      {{#if defeated}}
+      <div class="defeated-overlay"><i class="fas fa-skull"></i></div>
+      {{/if}}
+   </div>
+
+   <div class="card-info">
+      <span class="card-name" data-tooltip="{{name}}">{{name}}</span>
+      <span class="card-initiative">{{initiative}}</span>
+   </div>
+
+   {{#if showHPBar}}
+   <div class="card-hp-bar">
+      <div class="hp-fill" style="width: {{hpPercent}}%; background-color: {{hpColor}};"></div>
+   </div>
+   {{/if}}
+
+   {{#if showActionSelect}}
+   <div class="card-action">
+      <select name="declaredAction" data-combatant-id="{{combatantId}}" data-token-id="{{tokenId}}" {{#unless canChangeAction}}disabled{{/unless}}>
+         {{#each availableActions}}
+         <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+         {{/each}}
+      </select>
+   </div>
+   {{/if}}
+</div>

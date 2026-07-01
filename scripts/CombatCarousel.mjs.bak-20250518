@@ -1,0 +1,1097 @@
+import { CombatantCard } from './CombatantCard.mjs';
+
+const MODULE_ID = 'fantastic-depths-combat-carousel';
+
+// Combat Sequence Checklist phase order for group mode
+// Keys must match FaDe's declaredAction values (FADE.combat.maneuvers.*)
+const ACTION_PHASE_ORDER = {
+  morale: 1,
+  moveOnly: 2,
+  readyWeapon: 2,
+  retreat: 2,
+  withdrawal: 2,
+  fire: 3,
+  throw: 3,
+  magicItem: 4,
+  spell: 4,
+  concentrate: 4,
+  setSpear: 5,
+  lance: 5,
+  attack: 5,
+  multiAttack: 5,
+  smash: 5,
+  nothing: 99
+};
+
+function getActionPhase(combatant) {
+  const action = combatant.actor?.system?.combat?.declaredAction;
+  if (!action) return 99;
+  return ACTION_PHASE_ORDER[action] ?? 99;
+}
+
+/**
+ * CombatCarousel - Pure DOM-based combat carousel docked at top of screen.
+ * Does not extend ApplicationV2 to avoid template/rendering issues.
+ */
+export class CombatCarousel {
+
+  constructor(combat) {
+    if (ui.combatCarousel) {
+      ui.combatCarousel.destroy();
+    }
+    ui.combatCarousel = this;
+    this.combat = combat ?? game.combat;
+    this.cards = [];
+    this._hooks = [];
+    this.element = null;
+    this.rendered = false;
+    this._pendingTieRerolls = new Set(); // combatant IDs that still need to reroll in a tie
+    this._resolvedTiePairs = new Set(); // Set of "idA|idB" strings for ties that have been resolved
+    this._resolvingTies = false; // guard against re-entrant detectTies calls
+    // Restore sorted turn index from combat flags (survives F5)
+    const savedIdx = (combat ?? game.combat)?.getFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx');
+    this._sortedTurnIdx = (typeof savedIdx === 'number') ? savedIdx : 0;
+  }
+
+  get sortedCombatants() {
+    // In individualChecklist mode, sort purely by individual initiative (descending)
+    if (this.initiativeMode === 'individualChecklist') {
+      return Array.from(this.combat.combatants.contents).sort((a, b) => {
+        const ai = a.initiative ?? -Infinity;
+        const bi = b.initiative ?? -Infinity;
+        return bi - ai || a.name.localeCompare(b.name);
+      });
+    }
+    // In group/checklist modes, sort by initiative (desc) then combat sequence phase
+    if (this.isGroupMode) {
+      return Array.from(this.combat.combatants.contents).sort((a, b) => {
+        const ai = a.initiative ?? -Infinity;
+        const bi = b.initiative ?? -Infinity;
+        if (bi !== ai) return bi - ai;
+        const pa = getActionPhase(a);
+        const pb = getActionPhase(b);
+        if (pa !== pb) return pa - pb;
+        return a.name.localeCompare(b.name);
+      });
+    }
+    return Array.from(this.combat.combatants.contents.sort(this.combat._sortCombatants));
+  }
+
+  get initiativeMode() {
+    return game.settings.get(game.system.id, 'initiativeMode');
+  }
+
+  get isGroupMode() {
+    return ['group', 'advancedGroup'].includes(this.initiativeMode);
+  }
+
+  render(force = false) {
+    if (this.rendered && !force) return this;
+    this._buildDOM();
+    this._appendToUI();
+    this.setupCombatants();
+    this._activateControlListeners();
+    this._setHooks();
+    this.rendered = true;
+    let nextRound = 'reset';
+    try { nextRound = game.settings.get(game.system.id, 'nextRound') ?? 'reset'; } catch(e) {}
+    console.log(`${MODULE_ID} | Combat Carousel rendered | initiativeMode=${this.initiativeMode} | nextRound=${nextRound} | isGroupMode=${this.isGroupMode}`);
+    return this;
+  }
+
+  _buildDOM() {
+    if (this.element) this.element.remove();
+
+    const isGM = game.user.isGM;
+    const portraitSize = game.settings.get('fantastic-depths-combat-carousel', 'portraitSize');
+    const el = document.createElement('div');
+    el.id = 'combat-carousel-panel';
+    el.classList.add('combat-carousel-panel', 'docked-top');
+    el.style.setProperty('--portrait-size', `${portraitSize}px`);
+
+    let html = '';
+
+    const initModeTooltip = this._getInitModeTooltip();
+    const nextRoundTooltip = this._getNextRoundTooltip();
+    const initLabel = game.i18n.lang === 'it' ? 'INIZIATIVA' : 'INITIATIVE';
+    html += `
+    <div class="carousel-round-indicator">
+      <span class="initiative-label">
+        ${initLabel}
+        <i class="fas fa-circle-info round-info-icon" data-tooltip="${initModeTooltip}"></i>
+      </span>
+      <span class="round-label">
+        ${game.i18n.localize('FDCC.Round')}
+        <i class="fas fa-circle-info round-info-icon round-mode-icon" data-tooltip="${nextRoundTooltip}"></i>
+      </span>
+      <span class="round-number">${this.combat.round ?? 0}</span>
+    </div>`;
+
+    if (isGM) {
+      html += `
+      <div class="carousel-controls left">
+        <button type="button" data-action="previous-turn" data-tooltip="${game.i18n.localize('FDCC.Controls.PrevTurn')}">
+          <i class="fas fa-backward-step"></i>
+        </button>
+        <button type="button" data-action="previous-round" data-tooltip="${game.i18n.localize('FDCC.Controls.PrevRound')}">
+          <i class="fas fa-backward"></i>
+        </button>
+      </div>`;
+    }
+
+    html += `<div id="carousel-combatants" class="carousel-combatants"></div>`;
+
+    if (isGM) {
+      const showGMRollPcs = this.isGroupMode ? '' : 'display:none';
+      html += `
+      <div class="carousel-controls right">
+        <div class="controls-column">
+          <button type="button" data-action="roll-all" data-tooltip="${game.i18n.localize('FDCC.Controls.RollAll')}">
+            <i class="fas fa-dice"></i>
+          </button>
+          <button type="button" data-action="roll-pcs" class="roll-pcs-btn" data-tooltip="${game.i18n.localize('FDCC.Controls.RollPCs')}" style="${showGMRollPcs}" disabled>
+            <i class="fas fa-dice"></i>
+          </button>
+          <button type="button" data-action="roll-npc" data-tooltip="${game.i18n.localize('FDCC.Controls.RollNPC')}">
+            <i class="fas fa-users"></i>
+          </button>
+          <button type="button" data-action="reset-initiative" data-tooltip="${game.i18n.localize('FDCC.Controls.ResetInitiative')}">
+            <i class="fas fa-rotate-left"></i>
+          </button>
+          <button type="button" data-action="start-combat" data-tooltip="${game.i18n.localize('FDCC.Controls.StartCombat')}" style="${this.combat.started ? 'display:none' : ''}">
+            <i class="fas fa-swords"></i>
+          </button>
+        </div>
+        <div class="controls-column">
+          <button type="button" data-action="next-turn" data-tooltip="${game.i18n.localize('FDCC.Controls.NextTurn')}">
+            <i class="fas fa-forward-step"></i>
+          </button>
+          <button type="button" data-action="next-round" data-tooltip="${game.i18n.localize('FDCC.Controls.NextRound')}">
+            <i class="fas fa-forward"></i>
+          </button>
+          <button type="button" data-action="end-combat" data-tooltip="${game.i18n.localize('FDCC.Controls.EndCombat')}">
+            <i class="fas fa-xmark"></i>
+          </button>
+        </div>
+      </div>`;
+    } else if (this.isGroupMode) {
+      html += `
+      <div class="carousel-controls right">
+        <button type="button" data-action="roll-pcs" class="roll-pcs-btn" data-tooltip="${game.i18n.localize('FDCC.Controls.RollPCs')}" disabled>
+          <i class="fas fa-dice"></i>
+        </button>
+      </div>`;
+    }
+
+
+    el.innerHTML = html;
+    this.element = el;
+  }
+
+  _getInitModeTooltip() {
+    const isIT = game.i18n.lang === 'it';
+    const mode = this.initiativeMode;
+    if (mode === 'individual')         return isIT ? 'INDIVIDUALE' : 'INDIVIDUAL';
+    if (mode === 'individualSimplified') return isIT ? 'INDIVIDUALE Semplificata' : 'INDIVIDUAL Simplified';
+    if (mode === 'individualChecklist') return isIT ? 'INDIVIDUALE Azioni dichiarate' : 'INDIVIDUAL Combat Checklist';
+    if (mode === 'group')              return isIT ? 'GRUPPO Azioni dichiarate' : 'GROUP Combat Checklist';
+    if (mode === 'advancedGroup')      return isIT ? 'GRUPPO Sequenza in 2 Fasi' : 'GROUP 2-part sequence';
+    return mode;
+  }
+
+  _getNextRoundTooltip() {
+    const isIT = game.i18n.lang === 'it';
+    let value = 'reset';
+    try { value = game.settings.get(game.system.id, 'nextRound') ?? 'reset'; } catch(e) {}
+    const labels = {
+      hold:   isIT ? 'Mantieni Iniziativa' : 'Hold Initiative',
+      reset:  isIT ? 'Azzera Iniziativa' : 'Reset Initiative',
+      reroll: isIT ? 'Ritira Iniziativa' : 'Reroll Initiative'
+    };
+    return labels[value] ?? value;
+  }
+
+  _appendToUI() {
+    const uiTop = document.querySelector('#ui-top');
+    if (uiTop && this.element) {
+      uiTop.prepend(this.element);
+    }
+  }
+
+  setupCombatants() {
+    const container = this.element?.querySelector('#carousel-combatants');
+    if (!container) return;
+
+    container.innerHTML = '';
+    this.cards = [];
+
+    const combatants = this.sortedCombatants;
+    const allHaveInit = !this.combat.combatants.some(c => c.initiative == null);
+    const allActionsChosen = !this._hasUnselectedActions();
+    const initiatives = this.combat.combatants.map(c => c.initiative).filter(i => i != null);
+    const hasDuplicates = initiatives.length !== new Set(initiatives).size;
+    const hasPendingRerolls = this._pendingTieRerolls.size > 0;
+    let suppressActive = false;
+    if (this.initiativeMode === 'individualChecklist') {
+      suppressActive = !allHaveInit || hasDuplicates || hasPendingRerolls;
+    } else if (this.isGroupMode) {
+      suppressActive = !allHaveInit || !allActionsChosen;
+    }
+    const useInternalIdx = this.isGroupMode && this.combat.started && !suppressActive;
+    const currentId = useInternalIdx
+      ? (combatants[this._sortedTurnIdx]?.id ?? null)
+      : (!suppressActive && this.combat.started) ? this.combat.combatant?.id : null;
+
+    combatants.forEach((combatant) => {
+      // Hide hidden combatants from players
+      if (!game.user.isGM && combatant.hidden) return;
+      const card = new CombatantCard(combatant, {
+        isActive: currentId ? combatant.id === currentId : false,
+        combat: this.combat
+      });
+      this.cards.push(card);
+      container.appendChild(card.wrapper);
+    });
+
+    this._updateRoundIndicator();
+    this._updateStartEndButtons();
+    this._updateRollPCsButton();
+    this._updateGMRollButtons();
+    this._updateStartCombatButton();
+    this._checkDiceFacesWarning();
+    this._autoRollIfReady();
+  }
+
+  updateSingleCard(combatant) {
+    const card = this.cards.find(c => c.combatant === combatant);
+    if (card) card.refresh();
+  }
+
+  refreshCards() {
+    const allHaveInit = !this.combat.combatants.some(c => c.initiative == null);
+    const allActionsChosen = !this._hasUnselectedActions();
+    const initiatives = this.combat.combatants.map(c => c.initiative).filter(i => i != null);
+    const hasDuplicates = initiatives.length !== new Set(initiatives).size;
+    const hasPendingRerolls = this._pendingTieRerolls.size > 0;
+    let suppressActive = false;
+    if (this.initiativeMode === 'individualChecklist') {
+      suppressActive = !allHaveInit || hasDuplicates || hasPendingRerolls;
+    } else if (this.isGroupMode) {
+      suppressActive = !allHaveInit || !allActionsChosen;
+    }
+    const useInternalIdx2 = this.isGroupMode && this.combat.started && !suppressActive;
+    const currentId2 = useInternalIdx2
+      ? (this.sortedCombatants[this._sortedTurnIdx]?.id ?? null)
+      : (!suppressActive && this.combat.started) ? this.combat.combatant?.id : null;
+    this.cards.forEach(card => {
+      card.isActive = currentId2 ? card.combatant.id === currentId2 : false;
+      card.refresh();
+    });
+    this._updateRoundIndicator();
+    this._updateStartEndButtons();
+    this._updateRollPCsButton();
+    this._updateGMRollButtons();
+    this._updateStartCombatButton();
+    this._scrollToActiveCard();
+    this._autoRollIfReady();
+  }
+
+  _scrollToActiveCard() {
+    const container = this.element?.querySelector('.carousel-combatants');
+    if (!container) return;
+    const activeCard = container.querySelector('.combatant-card.active');
+    if (!activeCard) return;
+    const containerRect = container.getBoundingClientRect();
+    const cardRect = activeCard.getBoundingClientRect();
+    const scrollLeft = activeCard.offsetLeft - container.offsetLeft - (containerRect.width / 2) + (cardRect.width / 2);
+    container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+  }
+
+  _updateRoundIndicator() {
+    const roundEl = this.element?.querySelector('.round-number');
+    if (roundEl) roundEl.textContent = this.combat.round ?? 0;
+    const roundIcon = this.element?.querySelector('.round-mode-icon');
+    if (roundIcon) roundIcon.dataset.tooltip = this._getNextRoundTooltip();
+  }
+
+  _updateStartEndButtons() {
+    const startBtn = this.element?.querySelector('[data-action="start-combat"]');
+    const endBtn = this.element?.querySelector('[data-action="end-combat"]');
+    if (startBtn) startBtn.style.display = this.combat.started ? 'none' : '';
+    if (endBtn) endBtn.style.display = '';
+  }
+
+  _activateControlListeners() {
+    const buttons = this.element?.querySelectorAll('.carousel-controls button');
+    if (buttons) {
+      buttons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const action = e.currentTarget.dataset.action;
+          this._handleControlAction(action, e);
+        });
+      });
+    }
+
+    // Event delegation for action select changes - prevents stale listener issues
+    const container = this.element?.querySelector('#carousel-combatants');
+    if (container) {
+      container.addEventListener('change', (e) => {
+        const select = e.target.closest('select[name="declaredAction"]');
+        if (!select) return;
+        // Find the card for this select
+        const cardEl = select.closest('.combatant-card');
+        if (!cardEl) return;
+        const combatantId = cardEl.dataset.combatantId;
+        const card = this.cards.find(c => c.combatant.id === combatantId);
+        if (card) {
+          e.stopPropagation();
+          card._onActionChange(e, select);
+        }
+      });
+    }
+
+    this._activateDragScroll();
+  }
+
+  _activateDragScroll() {
+    const container = this.element?.querySelector('.carousel-combatants');
+    if (!container) return;
+    let isDown = false;
+    let startX;
+    let scrollLeft;
+
+    container.addEventListener('mousedown', (e) => {
+      if (e.target.closest('select, button, .card-control, .active-indicator')) return;
+      isDown = true;
+      container.classList.add('dragging');
+      startX = e.pageX - container.offsetLeft;
+      scrollLeft = container.scrollLeft;
+    });
+
+    container.addEventListener('mouseleave', () => {
+      isDown = false;
+      container.classList.remove('dragging');
+    });
+
+    container.addEventListener('mouseup', () => {
+      isDown = false;
+      container.classList.remove('dragging');
+    });
+
+    container.addEventListener('mousemove', (e) => {
+      if (!isDown) return;
+      e.preventDefault();
+      const x = e.pageX - container.offsetLeft;
+      const walk = (x - startX) * 1.5;
+      container.scrollLeft = scrollLeft - walk;
+    });
+  }
+
+  _handleControlAction(action, event) {
+    switch (action) {
+      case 'previous-turn':
+      case 'next-turn':
+      case 'previous-round':
+      case 'next-round':
+        if (action === 'previous-turn' || action === 'previous-round') {
+          // Always allow going back if combat has started
+          if (!this.combat.started) return;
+        } else if (!this._hasInitiativeRolled()) {
+          ui.notifications.warn(game.i18n.localize('FDCC.WarnNoInitiative'));
+          return;
+        }
+        if (action === 'previous-turn') this._previousTurn();
+        else if (action === 'next-turn') this._nextTurn();
+        else if (action === 'previous-round') this.combat.previousRound();
+        else if (action === 'next-round') this.combat.nextRound();
+        break;
+      case 'roll-all':
+        if (this._hasUnselectedActions()) {
+          ui.notifications.warn(game.i18n.localize('FDCC.WarnActionsNotSelected'));
+          return;
+        }
+        this.combat.rollAll({ event });
+        break;
+      case 'roll-npc':
+        if (this._hasNPCUnselectedActions()) {
+          ui.notifications.warn(game.i18n.localize('FDCC.WarnActionsNotSelected'));
+          return;
+        }
+        this._rollNPCInitiative();
+        break;
+      case 'roll-pcs':
+        if (this._hasPlayerUnselectedActions()) {
+          ui.notifications.warn(game.i18n.localize('FDCC.WarnActionsNotSelected'));
+          return;
+        }
+        this._rollPlayerInitiative();
+        break;
+      case 'reset-initiative':
+        Promise.all(
+          this.combat.combatants.map(c => c.update({ initiative: null }))
+        ).then(() => this.refreshCards());
+        break;
+      case 'start-combat':
+        if ((this._pendingTieRerolls?.size ?? 0) > 0) {
+          ui.notifications.warn(game.i18n.localize('FDCC.WarnTiesMustBeResolved'));
+          return;
+        }
+        if (this._hasUnselectedActions() && !this._hasInitiativeRolled()) {
+          ui.notifications.warn(game.i18n.localize('FDCC.WarnActionsAndInitiative'));
+          return;
+        }
+        if (this._hasUnselectedActions()) {
+          ui.notifications.warn(game.i18n.localize('FDCC.WarnActionsNotSelected'));
+          return;
+        }
+        if (!this._hasInitiativeRolled()) {
+          ui.notifications.warn(game.i18n.localize('FDCC.WarnNoInitiative'));
+          return;
+        }
+        this._startCombatPreservingActions();
+        break;
+      case 'end-combat':
+        this.combat.endCombat();
+        break;
+    }
+  }
+
+  /**
+   * Detect duplicate initiatives and mark tied combatants for a visible reroll.
+   * Each tied combatant must roll once; their result is stored as base + (roll/100)
+   * so the final order is: same integer, broken by the tie-reroll decimal.
+   */
+  async detectTies() {
+    if (!game.user.isGM) return;
+    if (this._resolvingTies) return;
+    // Group by exact initiative value (including decimals)
+    const initCounts = new Map();
+    for (const c of this.combat.combatants) {
+      if (c.initiative == null) continue;
+      const init = c.initiative;
+      if (!initCounts.has(init)) initCounts.set(init, []);
+      initCounts.get(init).push(c.id);
+    }
+    // Collect all combatants currently in a tie (same initiative, 2+ members)
+    const currentTieIds = new Set();
+    for (const [initVal, ids] of initCounts) {
+      if (ids.length < 2) continue;
+      // Add all members of this tie group
+      for (const id of ids) currentTieIds.add(id);
+    }
+    // Note: we intentionally do NOT clear _pendingTieRerolls here when no ties are found.
+    // The set is cleared by markTieRerolled when combatants actually reroll and break the tie.
+    // This prevents race conditions where detectTies (triggered by updateCombatant hook) 
+    // clears the set before markTieRerolled can perform orphan cleanup.
+    if (currentTieIds.size === 0) return;
+    // Add all currently-tied combatants to pending (supports infinite rerolls of same pair)
+    const hadPending = this._pendingTieRerolls.size > 0;
+    for (const id of currentTieIds) this._pendingTieRerolls.add(id);
+    const allPending = Array.from(this._pendingTieRerolls);
+    console.log(`FDCC | detectTies | currentTieIds=${Array.from(currentTieIds).join(',')} | pending now=${allPending.join(',')} | initValues=${Array.from(initCounts.entries()).map(([k,v])=>`${k}:[${v.join(',')}]`).join(', ')}`);
+    console.log(`FDCC | detectTies | ${allPending.length} combatant(s) need tie-reroll: ${allPending.map(id => this.combat.combatants.get(id)?.name).join(', ')}`);
+    // Broadcast to clients so they show the orange indicator too
+    const socketName = `module.${MODULE_ID}`;
+    game.socket.emit(socketName, { action: 'syncTieRerolls', combatId: this.combat.id, ids: allPending, round: this.combat.round });
+    this.refreshCards();
+  }
+
+  /**
+   * Mark a combatant as having completed their tie reroll.
+   * If all pending rerolls are done, clear the set and check for new ties.
+   */
+  markTieRerolled(combatantId) {
+    const name = this.combat.combatants.get(combatantId)?.name ?? combatantId;
+    console.log(`FDCC | markTieRerolled | ${name} | pending before=${this._pendingTieRerolls.size}`, new Error().stack?.split('\n').slice(1,4).join(' | '));
+    this._pendingTieRerolls.delete(combatantId);
+    console.log(`FDCC | markTieRerolled | ${name} removed | pending now=${this._pendingTieRerolls.size}`);
+
+    // NOTE: We intentionally do NOT clean up "orphaned" combatants here.
+    // If A and B were tied at 11, and A rerolls to 11.14, B should still be able
+    // to reroll to try to beat A (e.g., get 11.15). B remains in the set until
+    // they reroll themselves or the round changes.
+
+    if (this._pendingTieRerolls.size === 0) {
+      // All tied combatants have rerolled — check for new ties
+      // Broadcast clear to all clients
+      if (game.user.isGM) {
+        const socketName = `module.${MODULE_ID}`;
+        game.socket.emit(socketName, { action: 'clearTieRerolls', combatId: this.combat.id, round: this.combat.round });
+      }
+      setTimeout(() => {
+        this.detectTies();
+        // Always refresh cards on GM side so yellow borders clear even when no new ties are found
+        this.refreshCards();
+        // If no new ties, fix turn to highest initiative (individualChecklist only, GM only)
+        if (game.user.isGM && this.initiativeMode === 'individualChecklist' && this._pendingTieRerolls.size === 0) {
+          const initiatives = this.combat.combatants.map(c => c.initiative).filter(i => i != null);
+          const allRolled = initiatives.length === this.combat.combatants.size;
+          const hasDuplicates = initiatives.length !== new Set(initiatives).size;
+          if (allRolled && !hasDuplicates) {
+            // Extra defer: Foundry re-sorts combat.turns after each initiative update, wait for it to settle
+            const roundAtSchedule = this.combat.round;
+            setTimeout(() => {
+              if (this.combat?.round !== roundAtSchedule) return;
+              this._fixTurnToHighestInit();
+            }, 400);
+          }
+        }
+      }, 100);
+    }
+  }
+
+  /**
+   * Check if a combatant is pending a tie reroll.
+   */
+  isPendingTieReroll(combatantId) {
+    return this._pendingTieRerolls.has(combatantId);
+  }
+
+  _hasInitiativeRolled() {
+    return this.combat.combatants.some(c => c.initiative != null);
+  }
+
+  _allInitiativeRolled() {
+    return this.combat.combatants.every(c => c.initiative != null);
+  }
+
+  _hasUnselectedActions() {
+    // _resetPendingIds: combatants whose action was reset this round but not yet re-chosen
+    return this.combat.combatants.some(c => {
+      if (!c.actor) return false;
+      if (c.getFlag('fantastic-depths-combat-carousel', 'choseNothing')) return false;
+      if (this._resetPendingIds?.has(c.id)) return true;
+      const action = c.actor.system?.combat?.declaredAction;
+      return !action || action === 'nothing';
+    });
+  }
+
+  _hasNPCUnselectedActions() {
+    return this.combat.combatants.some(c => {
+      if (!c.actor) return false;
+      if (c.token?.disposition !== CONST.TOKEN_DISPOSITIONS.HOSTILE) return false;
+      if (c.getFlag('fantastic-depths-combat-carousel', 'choseNothing')) return false;
+      if (this._resetPendingIds?.has(c.id)) return true;
+      const action = c.actor.system?.combat?.declaredAction;
+      return !action || action === 'nothing';
+    });
+  }
+
+  _getFriendlyCombatants() {
+    return this.combat.combatants.filter(c =>
+      c.token?.disposition === CONST.TOKEN_DISPOSITIONS.FRIENDLY
+    );
+  }
+
+  _hasPlayerUnselectedActions() {
+    const friendlies = this._getFriendlyCombatants();
+    console.log(`FDCC | _hasPlayerUnselectedActions | friendlies=${friendlies.length}`, friendlies.map(c => `${c.name}:${c.actor?.system?.combat?.declaredAction}${this._resetPendingIds?.has(c.id) ? '*pending*' : ''}`));
+    return friendlies.some(c => {
+      if (!c.actor) return false;
+      if (c.getFlag('fantastic-depths-combat-carousel', 'choseNothing')) return false;
+      if (this._resetPendingIds?.has(c.id)) return true;
+      const action = c.actor.system?.combat?.declaredAction;
+      return !action || action === 'nothing';
+    });
+  }
+
+  _hasPlayerInitiativeRolled() {
+    return this.combat.combatants.some(c => {
+      if (!c.actor) return false;
+      if (!c.actor.hasPlayerOwner) return false;
+      return c.initiative != null;
+    });
+  }
+
+  async _rollNPCInitiative() {
+    const npcIds = this.combat.combatants
+      .filter(c => c.token?.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE && c.initiative == null)
+      .map(c => c.id);
+    if (npcIds.length === 0) return;
+    await this.combat.rollInitiative(npcIds);
+    setTimeout(() => this._fixTurnToHighestInit(), 300);
+  }
+
+  async _rollPlayerInitiative() {
+    const formula = game.settings.get(game.system.id, 'initiativeFormula') || '1d6';
+    if (this.isGroupMode) {
+      // Group mode: all FRIENDLY combatants share one roll
+      const friendlyIds = this._getFriendlyCombatants()
+        .filter(c => c.initiative == null)
+        .map(c => c.id);
+      console.log(`FDCC | _rollPlayerInitiative | GROUP | friendlyIds=`, friendlyIds);
+      if (friendlyIds.length === 0) return;
+      // Use current user's owned actor for roll data
+      const myActor = game.user.character;
+      const rollData = myActor?.getRollData() ?? {};
+      const dexMod = myActor?.system?.abilities?.dex?.mod ?? 0;
+      const initMod = myActor?.system?.mod?.initiative ?? 0;
+      rollData.mod = dexMod + initMod;
+      const roll = new Roll(formula, rollData);
+      await roll.evaluate();
+      console.log(`FDCC | _rollPlayerInitiative | GROUP | roll=${roll.total}`);
+      if (game.dice3d) await game.dice3d.showForRoll(roll, game.user, true);
+      // Update own combatant directly, delegate others to GM via socket
+      const myIds = friendlyIds.filter(id => {
+        const c = this.combat.combatants.get(id);
+        return c?.actor?.isOwner;
+      });
+      const otherIds = friendlyIds.filter(id => !myIds.includes(id));
+      console.log(`FDCC | _rollPlayerInitiative | myIds=`, myIds, `otherIds=`, otherIds);
+      if (myIds.length > 0) {
+        await Promise.all(myIds.map(id => this.combat.combatants.get(id)?.update({ initiative: roll.total })));
+      }
+      if (otherIds.length > 0) {
+        const payload = {
+          action: 'setGroupInitiative',
+          combatId: this.combat.id,
+          ids: otherIds,
+          value: roll.total
+        };
+        console.log(`FDCC | socket emit:`, payload);
+        game.socket.emit(`module.fantastic-depths-combat-carousel`, payload);
+      }
+    } else {
+      // Individual mode: each PC owned by a player rolls separately
+      const pcIds = this.combat.combatants
+        .filter(c => c.actor?.hasPlayerOwner && c.initiative == null)
+        .map(c => c.id);
+      console.log(`FDCC | _rollPlayerInitiative | INDIVIDUAL | pcIds=`, pcIds);
+      if (pcIds.length === 0) return;
+      const rolls = [];
+      for (const id of pcIds) {
+        const combatant = this.combat.combatants.get(id);
+        if (!combatant) continue;
+        const actor = combatant.actor;
+        const rollData = actor?.getRollData() ?? {};
+        const dexMod = actor?.system?.abilities?.dex?.mod ?? 0;
+        const initMod = actor?.system?.mod?.initiative ?? 0;
+        rollData.mod = dexMod + initMod;
+        const roll = new Roll(formula, rollData);
+        await roll.evaluate();
+        if (game.dice3d) await game.dice3d.showForRoll(roll, game.user, true);
+        rolls.push({ id, value: roll.total });
+      }
+      await Promise.all(rolls.map(r => this.combat.combatants.get(r.id)?.update({ initiative: r.value })));
+      setTimeout(() => this._fixTurnToHighestInit(), 300);
+    }
+    this._updateRollPCsButton();
+  }
+
+  _updateRollPCsButton() {
+    const btn = this.element?.querySelector('[data-action="roll-pcs"]');
+    if (!btn) return;
+    const allActionsChosen = !this._hasPlayerUnselectedActions();
+    // In group mode FaDe assigns initiative to the group representative (not individual PCs)
+    const initiativeRolled = this.isGroupMode ? this._hasInitiativeRolled() : this._hasPlayerInitiativeRolled();
+    console.log(`FDCC | _updateRollPCsButton | allActionsChosen=${allActionsChosen} initiativeRolled=${initiativeRolled}`);
+    if (initiativeRolled) {
+      btn.disabled = true;
+      btn.classList.remove('roll-pcs-ready');
+    } else if (allActionsChosen) {
+      btn.disabled = false;
+      btn.classList.add('roll-pcs-ready');
+    } else {
+      btn.disabled = true;
+      btn.classList.remove('roll-pcs-ready');
+    }
+  }
+
+  _updateGMRollButtons() {
+    if (!game.user.isGM) return;
+    const npcBtn = this.element?.querySelector('[data-action="roll-npc"]');
+    const allBtn = this.element?.querySelector('[data-action="roll-all"]');
+    const gmPcsBtn = this.element?.querySelector('.carousel-controls.right [data-action="roll-pcs"]');
+    const allActionsChosen = !this._hasUnselectedActions();
+    const anyPending = this._resetPendingIds?.size > 0;
+    const npcReady = !anyPending && !this._hasNPCUnselectedActions() && !this._hasNPCInitiativeRolled();
+    if (npcBtn) npcBtn.classList.toggle('roll-npc-ready', npcReady);
+    // In group mode: when all actions chosen + NPC have init but PCs don't → show roll-pcs instead of roll-all
+    if (this.isGroupMode && gmPcsBtn) {
+      const npcHaveInit = this.combat.combatants.some(c =>
+        c.token?.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE && c.initiative != null
+      );
+      const pcsNeedInit = this._getFriendlyCombatants().some(c => c.initiative == null);
+      const showPcsSwap = allActionsChosen && npcHaveInit && pcsNeedInit;
+      // Swap visibility
+      if (allBtn) allBtn.style.display = showPcsSwap ? 'none' : '';
+      gmPcsBtn.style.display = showPcsSwap ? '' : 'none';
+      if (showPcsSwap) {
+        gmPcsBtn.disabled = false;
+        gmPcsBtn.classList.add('roll-pcs-ready');
+      } else {
+        gmPcsBtn.disabled = true;
+        gmPcsBtn.classList.remove('roll-pcs-ready');
+      }
+      // roll-all glow when all actions chosen and no init rolled yet (and not in pcs-swap state)
+      const allReady = !anyPending && allActionsChosen && !this._allInitiativeRolled() && !showPcsSwap;
+      if (allBtn) allBtn.classList.toggle('roll-all-ready', allReady);
+    } else {
+      // Non-group mode: normal roll-all glow
+      // In individualChecklist: also block if there are tied initiatives pending resolution
+      const initiatives = this.combat.combatants.map(c => c.initiative).filter(i => i != null);
+      const hasDuplicates = initiatives.length !== new Set(initiatives).size;
+      const hasPendingTie = this._pendingTieRerolls?.size > 0;
+      const tieBlocked = this.initiativeMode === 'individualChecklist' && (hasDuplicates || hasPendingTie);
+      const allReady = !anyPending && !tieBlocked && allActionsChosen && !this._allInitiativeRolled();
+      if (allBtn) allBtn.classList.toggle('roll-all-ready', allReady);
+      if (npcBtn) npcBtn.classList.toggle('roll-npc-ready', !tieBlocked && npcReady);
+    }
+  }
+
+  _hasNPCInitiativeRolled() {
+    return this.combat.combatants.some(c =>
+      c.token?.disposition === CONST.TOKEN_DISPOSITIONS.HOSTILE && c.initiative != null
+    );
+  }
+
+  _updateStartCombatButton() {
+    const btn = this.element?.querySelector('[data-action="start-combat"]');
+    if (!btn) return;
+    const allActionsChosen = !this._hasUnselectedActions();
+    const allInitiative = this._allInitiativeRolled();
+    const hasTies = (this._pendingTieRerolls?.size ?? 0) > 0;
+    const ready = allActionsChosen && allInitiative && !hasTies && !this.combat.started;
+    if (ready) {
+      btn.disabled = false;
+      btn.classList.add('start-combat-ready');
+    } else if (hasTies) {
+      // Keep clickable so the ties warning can be shown, but not visually ready
+      btn.disabled = false;
+      btn.classList.remove('start-combat-ready');
+    } else {
+      btn.disabled = true;
+      btn.classList.remove('start-combat-ready');
+    }
+  }
+
+  _nextTurn() {
+    if (!['individualChecklist', 'group', 'advancedGroup'].includes(this.initiativeMode)) {
+      return this.combat.nextTurn();
+    }
+    if (this.isGroupMode) {
+      const sorted = this.sortedCombatants;
+      const nextIdx = this._sortedTurnIdx + 1;
+      if (nextIdx >= sorted.length) {
+        this._sortedTurnIdx = 0;
+        return this.combat.nextRound();
+      }
+      this._sortedTurnIdx = nextIdx;
+      this.refreshCards();
+      this._playCombatSound();
+      if (game.user.isGM) {
+        this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', nextIdx);
+      } else {
+        game.socket.emit(`module.fantastic-depths-combat-carousel`, {
+          action: 'setSortedTurnIdx',
+          combatId: this.combat.id,
+          value: nextIdx
+        });
+      }
+      return;
+    }
+    // individualChecklist: use combat.combatant
+    const sorted = this.sortedCombatants;
+    const currentId = this.combat.combatant?.id;
+    const currentIdx = sorted.findIndex(c => c.id === currentId);
+    const nextIdx = currentIdx + 1;
+    if (nextIdx >= sorted.length) return this.combat.nextRound();
+    const nextCombatant = sorted[nextIdx];
+    const turnIdx = this.combat.turns.findIndex(c => c.id === nextCombatant.id);
+    if (turnIdx >= 0) this.combat.update({ turn: turnIdx });
+  }
+
+  _previousTurn() {
+    if (!['individualChecklist', 'group', 'advancedGroup'].includes(this.initiativeMode)) {
+      return this.combat.previousTurn();
+    }
+    if (this.isGroupMode) {
+      if (this._sortedTurnIdx <= 0) {
+        // Going to previous round: set to last combatant of that round
+        this._sortedTurnIdx = Math.max(0, this.sortedCombatants.length - 1);
+        return this.combat.previousRound();
+      }
+      this._sortedTurnIdx -= 1;
+      this.refreshCards();
+      if (game.user.isGM) {
+        this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', this._sortedTurnIdx);
+      } else {
+        game.socket.emit(`module.fantastic-depths-combat-carousel`, {
+          action: 'setSortedTurnIdx',
+          combatId: this.combat.id,
+          value: this._sortedTurnIdx
+        });
+      }
+      return;
+    }
+    // individualChecklist
+    const sorted = this.sortedCombatants;
+    const currentId = this.combat.combatant?.id;
+    const currentIdx = sorted.findIndex(c => c.id === currentId);
+    if (currentIdx <= 0) return this.combat.previousRound();
+    const prevCombatant = sorted[currentIdx - 1];
+    const turnIdx = this.combat.turns.findIndex(c => c.id === prevCombatant.id);
+    if (turnIdx >= 0) this.combat.update({ turn: turnIdx });
+  }
+
+  async _autoRollIfReady() {
+    if (!game.user.isGM) return;
+    if (!this.isGroupMode && this.initiativeMode !== 'individualChecklist') return;
+    if (!this.combat?.started) return;
+    if (this._autoRolling) return;
+    if (this._initiativeClearing) return;
+    if (this._resetPendingIds?.size > 0) return;
+    const currentRound = this.combat.round;
+    if (this._autoRolledRound === currentRound) return;
+    let nextRound = 'reset';
+    try { nextRound = game.settings.get(game.system.id, 'nextRound') ?? 'reset'; } catch(e) {}
+    if (nextRound !== 'reroll') return;
+    // In group mode FaDe assigns one initiative per group (not per combatant), so use _hasInitiativeRolled
+    const initiativeRolled = this.isGroupMode ? this._hasInitiativeRolled() : this._allInitiativeRolled();
+    if (initiativeRolled) return;
+    if (this._hasUnselectedActions()) return;
+    this._autoRolling = true;
+    this._autoRolledRound = currentRound;
+    console.log(`FDCC | _autoRollIfReady | all actions chosen | mode=${this.initiativeMode} | round=${currentRound} | triggering roll-all`);
+    await this.combat.rollAll({});
+    console.log(`FDCC | _autoRollIfReady | roll-all complete for mode=${this.initiativeMode}`);
+    // Broadcast to clients that pending IDs are cleared — roll is done, actions are locked in
+    this._resetPendingIds?.clear();
+    const socketName = `module.${MODULE_ID}`;
+    game.socket.emit(socketName, { action: 'clearAllPendingIds', combatId: this.combat.id });
+    console.log(`FDCC | _autoRollIfReady | emitted clearAllPendingIds to clients`);
+    this.refreshCards();
+    this._autoRolling = false;
+    // Fix turn order after rollAll: FaDe's _activateCombatant may set combat.turn to the wrong combatant.
+    // Delay to let FaDe finish, then correct to highest initiative.
+    if (this.initiativeMode === 'individualChecklist') {
+      setTimeout(() => {
+        const initiatives = this.combat.combatants.map(c => c.initiative).filter(i => i != null);
+        const allRolled = initiatives.length === this.combat.combatants.size;
+        const hasDuplicates = initiatives.length !== new Set(initiatives).size;
+        if (allRolled && !hasDuplicates && this._pendingTieRerolls.size === 0) {
+          const first = this.sortedCombatants[0];
+          if (first) {
+            const turnIdx = this.combat.turns.findIndex(c => c.id === first.id);
+            console.log(`FDCC | _autoRollIfReady | post-rollAll fix | first=${first.name} turnIdx=${turnIdx} currentTurn=${this.combat.turn}`);
+            if (turnIdx >= 0 && turnIdx !== this.combat.turn) this.combat.update({ turn: turnIdx });
+          }
+        }
+      }, 300);
+    }
+  }
+
+  _fixTurnToHighestInit() {
+    if (!game.user.isGM) return;
+    if (this.initiativeMode !== 'individualChecklist') return;
+    if (!this.combat.started) return;
+    if (this._roundChanging) { console.log('FDCC | _fixTurnToHighestInit | skipped — round changing'); return; }
+    const initiatives = this.combat.combatants.map(c => c.initiative).filter(i => i != null);
+    if (initiatives.length !== this.combat.combatants.size) return;
+    const hasDuplicates = initiatives.length !== new Set(initiatives).size;
+    if (hasDuplicates) return;
+    if (this._pendingTieRerolls?.size > 0) return;
+    const first = this.sortedCombatants[0];
+    if (!first) return;
+    const turnIdx = this.combat.turns.findIndex(c => c.id === first.id);
+    console.log(`FDCC | _fixTurnToHighestInit | first=${first.name} (${first.initiative}) turnIdx=${turnIdx} currentTurn=${this.combat.turn} | turns order: ${this.combat.turns.map(c => c.name + ':' + c.initiative).join(', ')}`);
+    // Always update turn if the current active combatant is not the highest-initiative one
+    const currentActiveId = this.combat.combatant?.id;
+    if (first.id !== currentActiveId && turnIdx >= 0) {
+      this.combat.update({ turn: turnIdx });
+    }
+  }
+
+  _playCombatSound() {
+    try { game.audio.play('sounds/combat/epic-turn-1hit.ogg', { volume: 0.8 }); } catch(e) {}
+  }
+
+  _playRoundSound() {
+    // Temporarily suppress game.audio.play to block FaDe's internal sound, then play ours
+    const orig = game.audio.play.bind(game.audio);
+    game.audio.play = () => {};
+    setTimeout(() => { game.audio.play = orig; }, 500);
+    try { orig('sounds/combat/epic-turn-2hit.ogg', { volume: 0.8 }); } catch(e) {}
+  }
+
+  _setHooks() {
+    this._removeHooks();
+
+    this._hooks.push({ name: 'updateActor', id: Hooks.on('updateActor', (actor, changes) => {
+      // Ignore updates fired during FaDe's own roundReset calls (before the new round starts)
+      if (this._roundChanging) return;
+      const action = changes?.system?.combat?.declaredAction;
+      if (action === undefined) return;
+      const combatant = this.combat?.combatants.find(c => c.actor?.id === actor.id);
+      if (!combatant) return;
+      // Remove from pending set if present (only relevant mid-round after nextRound)
+      if (action && action !== 'nothing' && this._resetPendingIds?.has(combatant.id)) {
+        this._resetPendingIds.delete(combatant.id);
+        console.log(`FDCC | updateActor | ${actor.name} chose ${action} — removed from _resetPendingIds (${this._resetPendingIds.size} remaining)`);
+      }
+      // Always refresh so GM sees players' action changes (even in round 0 before _resetPendingIds is populated)
+      this.refreshCards();
+      this._autoRollIfReady();
+    }) });
+
+    this._hooks.push({ name: 'updateCombatant', id: Hooks.on('updateCombatant', (combatant, changes) => {
+      if (combatant.parent !== this.combat) return;
+      // When choseNothing flag is set, remove from pending set
+      if (!this._resetPendingIds?.size) return;
+      const choseNothing = changes?.flags?.['fantastic-depths-combat-carousel']?.choseNothing;
+      if (choseNothing === true) {
+        this._resetPendingIds.delete(combatant.id);
+        console.log(`FDCC | updateCombatant | ${combatant.name} chose Nothing — removed from _resetPendingIds (${this._resetPendingIds.size} remaining)`);
+        this.refreshCards();
+        this._autoRollIfReady();
+      }
+    }) });
+
+    this._hooks.push({ name: 'updateCombat', id: Hooks.on('updateCombat', (combat, updates, options, userId) => {
+      if (combat !== this.combat) return;
+      // Sync sortedTurnIdx from GM's flag update (players receive this)
+      const flagIdx = updates?.flags?.['fantastic-depths-combat-carousel']?.sortedTurnIdx;
+      if (typeof flagIdx === 'number' && !game.user.isGM) {
+        this._sortedTurnIdx = flagIdx;
+        this.refreshCards();
+        this._scrollToActive();
+        this._playCombatSound();
+      }
+      // When combat starts (round 1), fix turn order for individualChecklist
+      if ('round' in updates && updates.round === 1 && game.user.isGM
+          && this.initiativeMode === 'individualChecklist') {
+        setTimeout(() => this._fixTurnToHighestInit(), 300);
+      }
+      if ('round' in updates && updates.round > 1) {
+        if (this.isGroupMode) this._playRoundSound();
+        let nextRound = 'reset';
+        try { nextRound = game.settings.get(game.system.id, 'nextRound') ?? 'reset'; } catch(e) {}
+        console.log(`FDCC | updateCombat | round=${updates.round} | initiativeMode=${this.initiativeMode} | nextRound=${nextRound}`);
+        this._pendingTieRerolls.clear();
+        this._autoRolledRound = null;
+        this._autoRolling = false;
+        this._initiativeClearing = false;
+        this._roundChanging = true;
+        // _roundChanging will be cleared by the deferred setTimeout below (non-GM) or by main.mjs patch (GM)
+        // Non-GM clients populate _resetPendingIds here (GM already did it in main.mjs nextRound patch)
+        if (!game.user.isGM && (nextRound === 'reroll' || nextRound === 'reset' || nextRound === 'hold')) {
+          this._resetPendingIds = new Set(Array.from(this.combat.combatants).map(c => c.id));
+          console.log(`FDCC | updateCombat | non-GM populated _resetPendingIds (${this._resetPendingIds.size})`);
+          setTimeout(() => {
+            this._roundChanging = false;
+            console.log(`FDCC | updateCombat | non-GM deferred refresh`);
+            this.refreshCards();
+          }, 300);
+        }
+        if (this.isGroupMode) {
+          this._sortedTurnIdx = 0;
+          if (game.user.isGM) this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', 0);
+        }
+        if (nextRound === 'reroll' && game.user.isGM) {
+          // Clear all initiatives so _allInitiativeRolled() returns false
+          // Use _initiativeClearing flag to prevent _autoRollIfReady from firing during clearing
+          this._initiativeClearing = true;
+          setTimeout(async () => {
+            await Promise.all(Array.from(this.combat.combatants).map(c => c.update({ initiative: null })));
+            this._initiativeClearing = false;
+            console.log(`FDCC | updateCombat | cleared initiatives for reroll`);
+            this.refreshCards();
+          }, 300);
+        }
+      }
+      if ('turn' in updates || 'round' in updates) {
+        if (this._suppressTurnRefresh && 'turn' in updates && !('round' in updates)) return;
+        this.refreshCards();
+        this._scrollToActive();
+      }
+    }) });
+  }
+
+  async _startCombatPreservingActions() {
+    // Save current declared actions and choseNothing flags before startCombat (FaDe resets them)
+    const savedActions = new Map();
+    const savedFlags = new Map();
+    Array.from(this.combat.combatants).forEach(c => {
+      if (c.actor) {
+        savedActions.set(c.id, c.actor.system?.combat?.declaredAction);
+        savedFlags.set(c.id, c.getFlag('fantastic-depths-combat-carousel', 'choseNothing') ?? false);
+      }
+    });
+    await this.combat.startCombat();
+    // Reset internal sorted index to start from first combatant
+    this._sortedTurnIdx = 0;
+    if (game.user.isGM) this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', 0);
+    // Wait a tick for FaDe's async reset to finish, then restore
+    setTimeout(async () => {
+      const restores = [];
+      Array.from(this.combat.combatants).forEach(c => {
+        if (c.actor && savedActions.has(c.id)) {
+          const action = savedActions.get(c.id);
+          if (action && action !== 'nothing') {
+            restores.push(c.actor.update({ 'system.combat.declaredAction': action }));
+          }
+          if (savedFlags.get(c.id)) {
+            restores.push(c.setFlag('fantastic-depths-combat-carousel', 'choseNothing', true));
+          }
+        }
+      });
+      await Promise.all(restores);
+      this.refreshCards();
+    }, 500);
+  }
+
+  async _resetDeclaredActions() {
+    if (!game.user.isGM) return;
+    const updates = Array.from(this.combat.combatants).flatMap(c => {
+      if (!c.actor) return [];
+      const tasks = [c.actor.update({ 'system.combat.declaredAction': null })];
+      if (c.getFlag('fantastic-depths-combat-carousel', 'choseNothing')) {
+        tasks.push(c.unsetFlag('fantastic-depths-combat-carousel', 'choseNothing'));
+      }
+      return tasks;
+    });
+    await Promise.all(updates);
+  }
+
+  _checkDiceFacesWarning() {
+    if (!game.user.isGM) return;
+    if (this.initiativeMode !== 'individualChecklist') return;
+    const formula = game.settings.get(game.system.id, 'initiativeFormula') || '1d6';
+    const match = formula.match(/\dd(\d+)/);
+    if (!match) return;
+    const diceFaces = parseInt(match[1]);
+    const numCombatants = this.combat.combatants.size;
+    if (numCombatants > diceFaces && !this._diceFacesWarned) {
+      this._diceFacesWarned = true;
+      ui.notifications.warn(game.i18n.localize('FDCC.WarnDiceFaces'));
+    }
+  }
+
+  _removeHooks() {
+    this._hooks.forEach(h => Hooks.off(h.name, h.id));
+    this._hooks = [];
+  }
+
+  _scrollToActive() {
+    const container = this.element?.querySelector('#carousel-combatants');
+    const activeCard = container?.querySelector('.combatant-card.active');
+    if (activeCard) {
+      activeCard.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }
+
+  close() {
+    this.destroy();
+  }
+
+  destroy() {
+    this._removeHooks();
+    if (this.element) {
+      this.element.remove();
+      this.element = null;
+    }
+    this.cards = [];
+    this.rendered = false;
+    if (ui.combatCarousel === this) ui.combatCarousel = null;
+  }
+}

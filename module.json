@@ -1,0 +1,53 @@
+{
+  "id": "fantastic-depths-combat-carousel",
+  "title": "Fantastic Depths Combat Carousel",
+  "description": "Combat Carousel per Fantastic Depths. Compatibile con Foundry VTT v14.",
+  "authors": [
+    {
+      "name": "FR4NC35C0",
+      "discord": "fr4nc35c0"
+    }
+  ],
+  "version": "1.1.0",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14.364"
+  },
+  "relationships": {
+    "systems": [
+      {
+        "id": "fantastic-depths",
+        "type": "system",
+        "compatibility": {
+          "minimum": "1.0.13",
+          "verified": "1.1.0"
+        }
+      }
+    ]
+  },
+  "esmodules": [
+    "scripts/main.mjs"
+  ],
+  "styles": [
+    "styles/combat-carousel.css"
+  ],
+  "languages": [
+    {
+      "lang": "it",
+      "name": "Italiano",
+      "path": "lang/it.json"
+    },
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "socket": true,
+  "url": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel",
+  "manifest": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/download/latest/module.json",
+  "download": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/download/latest/fantastic-depths-combat-carousel.zip",
+  "license": "MIT",
+  "readme": "README.md",
+  "bugs": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/issues"
+}

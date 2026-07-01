@@ -1,0 +1,67 @@
+{
+  "FDCC": {
+    "ModuleTitle": "Fantastic Depths Combat Carousel",
+    "Round": "Round",
+    "SelectAction": "Select...",
+    "WarnActionsNotSelected": "One or more characters/NPCs didn't select their combat action yet for this round.",
+    "WarnRollNotAllowedHold": "Rolling initiative is not allowed in Hold Initiative mode. Initiative values remain unchanged from the previous round.",
+    "WarnNoInitiative": "Please roll initiative for the combatants first.",
+    "WarnActionsAndInitiative": "Please declare all combat actions and roll initiative before starting combat.",
+    "ConfirmRerollTitle": "Re-roll Initiative?",
+    "ConfirmRerollContent": "All combatants already have an initiative score. Do you want to reset all scores and ties and re-roll initiative for everyone?",
+    "ConfirmRemoveLastTitle": "Combat Ended",
+    "ConfirmRemoveLastContent": "All combatants have been removed from the carousel and combat has ended. Award XP anyway?",
+    "WarnDiceFaces": "The number of combatants exceeds the initiative die faces. Consider increasing the die size in FaDe settings to reduce guaranteed ties.",
+    "InitiativeChat": {
+      "Initiative": "Initiative",
+      "Party": "Party",
+      "Enemies": "Enemies",
+      "Neutral": "Neutral",
+      "GroupRoll": "🎲 Group Initiative",
+      "PartyRoll": "🎲 Party Initiative", 
+      "EnemiesRoll": "🎲 Enemies Initiative",
+      "NeutralRoll": "🎲 Neutral Initiative",
+      "IndividualRoll": "🎲 Individual Initiative",
+      "Rolled": "rolled",
+      "Result": "result",
+      "For": "for",
+      "Combatants": "combatants"
+    },
+    "WarnTiesMustBeResolved": "All ties must be resolved first. / Tutte le contese devono essere risolte.",
+    "TieRerollBlockedPendingInitiatives": "All combatants must roll initiative before resolving ties.",
+    "EditInit": {
+      "Title": "Init: {name}",
+      "Confirm": "Confirm",
+      "GroupHint": "* updates all with init {value}"
+    },
+    "Controls": {
+      "PrevTurn": "Previous Turn",
+      "NextTurn": "Next Turn",
+      "PrevRound": "Previous Round",
+      "NextRound": "Next Round",
+      "RollAll": "Roll All Initiative",
+      "RollNPC": "Roll NPC Initiative",
+      "RollPCs": "Roll PC Initiative",
+      "RollMyInit": "Roll Initiative",
+      "ResetInitiative": "Reset Initiative",
+      "StartCombat": "Start Combat",
+      "EndCombat": "End Combat"
+    },
+    "Actions": {
+      "wrestle": "Wrestle",
+      "nothing": "Nothing"
+    },
+    "Settings": {
+      "PortraitSizeName": "Portrait Size",
+      "PortraitSizeHint": "Size of combatant portraits in pixels.",
+      "ShowHPBarName": "Show HP Bar",
+      "ShowHPBarHint": "Display HP bar below each combatant portrait.",
+      "ShowHPBarToPlayersName": "Show HP bars to players",
+      "ShowHPBarToPlayersHint": "If enabled, players will see HP bars on combatant cards.",
+      "ShowActionDropdownName": "Show Action Dropdown",
+      "ShowActionDropdownHint": "Show the declared action dropdown on owned combatants.",
+      "DebugModeName": "Enable DEBUG console",
+      "DebugModeHint": "Prints detailed information to the browser console (F12). Useful for reporting bugs to the developer."
+    }
+  }
+}

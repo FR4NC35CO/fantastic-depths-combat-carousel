@@ -1,0 +1,659 @@
+/* Fantastic Depths Combat Carousel - Styles */
+
+/* Override: #ui-top has pointer-events:none in Foundry v14 */
+#ui-top #combat-carousel-panel {
+  pointer-events: all;
+}
+
+#ui-top #combat-carousel-panel * {
+  pointer-events: auto;
+}
+
+/* ============ PANEL CONTAINER ============ */
+#combat-carousel-panel {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 8px 20px;
+  background: none;
+  border-bottom: none;
+  width: 100%;
+  box-sizing: border-box;
+  z-index: 100;
+  position: relative;
+  pointer-events: all;
+  overflow: visible;
+  min-height: fit-content;
+}
+
+/* ============ COMBATANTS CONTAINER ============ */
+.carousel-combatants {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 0px 0 30px;
+  scroll-behavior: smooth;
+  max-width: 100%;
+}
+
+.carousel-combatants::-webkit-scrollbar {
+  display: none;
+}
+
+.carousel-combatants {
+  scrollbar-width: none;
+  cursor: grab;
+}
+
+.carousel-combatants.dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* ============ COMBATANT CARD ============ */
+.combatant-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: var(--portrait-size, 80px);
+  max-width: calc(var(--portrait-size, 80px) + 20px);
+  background: rgba(30, 30, 30, 0.9);
+  border: 2px solid #444;
+  border-radius: 6px;
+  padding: 4px;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.combatant-card:hover {
+  border-color: #aaa;
+  transform: translateY(2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+.combatant-card.hovered {
+  border-color: #ffcc00;
+  box-shadow: 0 0 8px rgba(255, 204, 0, 0.4);
+}
+
+.combatant-card.active {
+  border-color: #4caf50;
+  box-shadow: 0 0 10px rgba(76, 175, 80, 0.6);
+  min-width: calc(var(--portrait-size, 80px) + 16px);
+  max-width: calc(var(--portrait-size, 80px) + 40px);
+  z-index: 2;
+}
+
+.combatant-card.active .card-portrait {
+  width: 100%;
+  aspect-ratio: 1;
+  height: auto;
+}
+
+.combatant-card.active .card-name {
+  font-size: 12px;
+  max-width: 110px;
+}
+
+.combatant-card.active .card-initiative {
+  font-size: 20px;
+}
+
+.combatant-card.defeated {
+  opacity: 0.5;
+  filter: grayscale(60%);
+}
+
+.combatant-card.hidden-combatant {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+/* ============ PORTRAIT ============ */
+.card-portrait {
+  width: 100%;
+  aspect-ratio: 1;
+  height: auto;
+  border-radius: 4px 4px 0 0;
+  background-size: cover;
+  background-position: center top;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.active-indicator {
+  position: absolute;
+  bottom: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 50px;
+  font-weight: bold;
+  color: #4caf50;
+  z-index: 5;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.active-indicator.ready:hover {
+  color: #66cc70;
+}
+
+.active-indicator.waiting {
+  color: #f1c40f;
+  cursor: default;
+  pointer-events: none;
+}
+
+.defeated-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 4px;
+  color: #f44336;
+  font-size: 22px;
+}
+
+.hidden-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 22px;
+  z-index: 2;
+  text-shadow: 0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000, -1px -1px 2px #000;
+}
+
+/* Slow weapon indicator for advancedGroup mode */
+.slow-indicator {
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
+  overflow: hidden; /* Hide the moved image, show only the shadow */
+}
+
+.slow-indicator img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  /* Move image out of view, keep only the colored shadow */
+  transform: translateY(-30px);
+  /* Orange shadow at original position + black outline shadows */
+  filter: drop-shadow(0 30px 0 #ff6600)
+         drop-shadow(0 30px 1px #000)
+         drop-shadow(0 30px 2px #000)
+         drop-shadow(0 30px 3px #000)
+         drop-shadow(0 30px 4px #000);
+}
+
+/* Waiting for next round indicator */
+.waiting-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  color: #ffc107;
+  font-size: 20px;
+  text-shadow: 0 0 4px #000, 0 0 8px #000, 1px 1px 2px #000, -1px -1px 2px #000;
+  pointer-events: none;
+}
+
+/* Darken card when waiting for next round */
+.combatant-card.waiting-for-round {
+  opacity: 0.7;
+  filter: brightness(0.8);
+}
+
+/* ============ INFO ============ */
+.card-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin-top: 3px;
+  background: transparent;
+}
+
+.card-name {
+  font-size: 10px;
+  font-weight: bold;
+  color: #eee;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+
+.card-initiative {
+  font-size: 16px;
+  color: #fff;
+  font-weight: bold;
+  padding-right: 6px;
+  -webkit-text-stroke: 0px #000;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+}
+
+/* ============ INITIATIVE SPIN DICE (GM awaiting roll) ============ */
+.init-spin-dice {
+  font-size: 16px;
+  color: #2ecc71;
+  cursor: pointer;
+  text-shadow: 0 0 4px rgba(46, 204, 113, 0.6), 0 0 8px rgba(0, 0, 0, 0.8), 1px 1px 2px #000, -1px -1px 2px #000;
+  animation: initDiceSpin 2s linear infinite;
+}
+
+/* ============ INITIATIVE DUPLICATE / REROLL ============ */
+.card-initiative.init-duplicate {
+  color: #ff9800;
+  animation: initDuplicatePulse 1s ease-in-out infinite;
+}
+
+.card-initiative.init-clickable {
+  cursor: pointer;
+}
+
+.card-initiative.init-clickable:hover {
+  text-decoration: underline;
+}
+
+.card-initiative.init-editable {
+  cursor: context-menu;
+}
+
+.card-initiative.init-editable:hover {
+  color: #ffe082;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(255,224,130,0.7);
+}
+
+@keyframes initDuplicatePulse {
+  0%, 100% { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 4px rgba(255, 152, 0, 0.4); }
+  50% { text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 12px rgba(255, 152, 0, 0.9); }
+}
+
+/* ============ INITIATIVE OVERLAY (player side) ============ */
+.card-initiative-overlay {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding-right: 3px;
+  z-index: 3;
+}
+
+/* ============ CARD CONTROLS ============ */
+.card-controls {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  z-index: 3;
+}
+
+.card-controls .card-control {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.combatant-card:hover .card-controls .card-control {
+  opacity: 1;
+}
+
+.card-control {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #ccc;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.card-control:hover {
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+}
+
+.card-control.control-active {
+  color: #f39c12;
+}
+
+/* ============ EFFECTS ============ */
+.card-effects {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  align-content: flex-start;
+  gap: 1px;
+  max-height: calc(14px * 3 + 1px * 2);
+  z-index: 3;
+}
+
+.card-effects .effect-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  border: none;
+  object-fit: cover;
+  opacity: 0.9;
+  cursor: default;
+  background: none;
+}
+
+.card-effects .effect-icon:hover {
+  opacity: 1;
+  border-color: #fff;
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+}
+
+/* ============ HP BAR ============ */
+.card-hp-bar {
+  width: 100%;
+  height: 5px;
+  background: #333;
+  border-radius: 2px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+
+.hp-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* ============ ACTION SELECT ============ */
+.card-action {
+  width: 100%;
+  margin-top: 3px;
+  border-radius: 3px;
+}
+
+.card-action select {
+  width: 100%;
+  height: auto;
+  font-size: 12px;
+  padding: 1px 3px;
+  background: #222;
+  color: #ddd;
+  border: 2px solid #555;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.card-action select:focus {
+  outline: none;
+}
+
+/* PENDING state: yellow border (GM sees this when player hasn't chosen) */
+.card-action.action-pending select {
+  border-color: #f1c40f;
+  box-shadow: 0 0 4px rgba(241, 196, 15, 0.5);
+}
+
+/* CONFIRMED state: green border (action has been selected) */
+.card-action.action-confirmed select {
+  border-color: #2ecc71;
+  box-shadow: 0 0 4px rgba(46, 204, 113, 0.5);
+}
+
+/* BLINKING glow for player side when action not yet chosen */
+.card-action.action-blink select {
+  animation: actionBlinkGlow 1.2s ease-in-out infinite;
+}
+
+@keyframes actionBlinkGlow {
+  0%, 100% {
+    border-color: #f1c40f;
+    box-shadow: 0 0 6px rgba(241, 196, 15, 0.6), 0 0 12px rgba(241, 196, 15, 0.3);
+  }
+  50% {
+    border-color: #ffe033;
+    box-shadow: 0 0 14px rgba(255, 224, 51, 1), 0 0 28px rgba(243, 156, 18, 0.7);
+  }
+}
+
+/* DISABLED / LOCKED state: after initiative rolled, player can't change */
+.card-action select:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  animation: none;
+}
+
+.card-action.action-confirmed select:disabled {
+  border-color: #2ecc71;
+  box-shadow: 0 0 3px rgba(46, 204, 113, 0.4);
+}
+
+.card-action.action-pending select:disabled {
+  border-color: #f1c40f;
+  box-shadow: 0 0 3px rgba(241, 196, 15, 0.4);
+}
+
+/* ============ CONTROLS ============ */
+.carousel-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
+.carousel-controls.left {
+  align-items: flex-end;
+}
+
+.carousel-controls.right {
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.controls-column {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.carousel-controls button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(50, 50, 50, 0.8);
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #ddd;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s, border-color 0.2s;
+  padding: 0;
+}
+
+.carousel-controls button:hover {
+  background: #7a4e1e;
+  border-color: #a66b2a;
+  color: #fff;
+}
+
+/* ============ CARD WRAPPER ============ */
+.combatant-card-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ============ PER-CARD INITIATIVE DICE ============ */
+.card-roll-init {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #666;
+  font-size: 24px;
+  cursor: default;
+  transition: all 0.3s;
+}
+
+.card-roll-init.init-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.card-roll-init.init-ready {
+  color: #2ecc71;
+  cursor: pointer;
+  outline: none;
+  box-shadow: none;
+  animation: initDiceGlow 1.2s ease-in-out infinite, initDiceSpin 2s linear infinite;
+}
+
+.card-roll-init:focus,
+.card-roll-init:focus-visible,
+.card-roll-init:active {
+  outline: none;
+  box-shadow: none;
+  border: none;
+}
+
+.card-roll-init.init-ready:hover {
+  background: transparent;
+}
+
+@keyframes initDiceGlow {
+  0%, 100% { color: #2ecc71; text-shadow: 0 0 4px rgba(46, 204, 113, 0.4); }
+  50% { color: #44e88a; text-shadow: 0 0 10px rgba(46, 204, 113, 0.8); }
+}
+
+@keyframes initDiceSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ============ ROLL PCS BUTTON ============ */
+.roll-pcs-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.roll-pcs-btn.roll-pcs-ready {
+  animation: rollPcsGlow 1.2s ease-in-out infinite;
+}
+
+@keyframes rollPcsGlow {
+  0%, 100% { border-color: #f1c40f; box-shadow: 0 0 6px rgba(241, 196, 15, 0.6), 0 0 12px rgba(241, 196, 15, 0.3); }
+  50% { border-color: #ffe033; box-shadow: 0 0 14px rgba(255, 224, 51, 1), 0 0 28px rgba(243, 156, 18, 0.7); }
+}
+
+/* ============ GM ROLL BUTTONS ============ */
+.carousel-controls button.roll-npc-ready {
+  animation: rollPcsGlow 1.2s ease-in-out infinite;
+}
+
+.carousel-controls button.roll-all-ready {
+  animation: rollPcsGlow 1.2s ease-in-out infinite;
+}
+
+/* ============ START COMBAT BUTTON ============ */
+.carousel-controls button[data-action="start-combat"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.carousel-controls button.start-combat-ready {
+  animation: startCombatGlow 1.2s ease-in-out infinite;
+}
+
+@keyframes startCombatGlow {
+  0%, 100% { border-color: #2ecc71; box-shadow: 0 0 8px rgba(46, 204, 113, 0.7), 0 0 16px rgba(46, 204, 113, 0.4); }
+  50% { border-color: #55ff99; box-shadow: 0 0 18px rgba(46, 204, 113, 1.0), 0 0 32px rgba(46, 204, 113, 0.6); }
+}
+
+.carousel-controls button.start-combat-ready:hover {
+  background: #1a7a3e;
+  border-color: #55ff99;
+  color: #fff;
+  box-shadow: 0 0 20px rgba(46, 204, 113, 1.0), 0 0 40px rgba(46, 204, 113, 0.7);
+}
+
+/* ============ ROUND INDICATOR ============ */
+.carousel-round-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+  padding: 0 6px;
+}
+
+.initiative-label {
+  font-size: 12px;
+  color: #fff;
+  font-weight: bold;
+  text-transform: uppercase;
+  -webkit-text-stroke: 0.5px #000;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 10px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.8);
+}
+
+.round-info-icon {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 1);
+  cursor: help;
+  margin-left: 2px;
+  vertical-align: middle;
+  -webkit-text-stroke: 0px;
+  text-shadow: none;
+}
+
+.round-info-icon:hover {
+  color: #fff;
+}
+
+.round-label {
+  font-size: 12px;
+  color: #fff;
+  font-weight: bold;
+  text-transform: uppercase;
+  -webkit-text-stroke: 0.5px #000;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 10px rgba(0, 0, 0, 1), 0 0 20px rgba(0, 0, 0, 0.8);
+}
+
+.round-number {
+  font-size: 20px;
+  font-weight: bold;
+  color: #2a89ff;
+  -webkit-text-stroke: 0.5px #000;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 10px rgba(0, 0, 0, 1), 0 0 20px rgba(0, 0, 0, 0.8);
+}
