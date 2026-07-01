@@ -45,8 +45,8 @@
   ],
   "socket": true,
   "url": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel",
-  "manifest": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/download/latest/module.json",
-  "download": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/download/latest/fantastic-depths-combat-carousel.zip",
+  "manifest": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/latest/download/module.json",
+  "download": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/latest/download/fantastic-depths-combat-carousel.zip",
   "license": "MIT",
   "readme": "README.md",
   "bugs": "https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/issues"

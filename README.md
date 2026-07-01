@@ -26,7 +26,7 @@ A **Combat Carousel** module for Foundry VTT v14, designed specifically for the 
 2. Click **Install Module**
 3. Enter this URL in the **Manifest URL** field:
    ```
-   https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/download/latest/module.json
+   https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/latest/download/module.json
    ```
 4. Click **Install**
 
@@ -195,7 +195,7 @@ Modulo **Combat Carousel** per Foundry VTT v14, progettato specificamente per il
 2. Clicca **Install Module**
 3. Inserisci questo URL nel campo **Manifest URL**:
    ```
-   https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/download/latest/module.json
+   https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/latest/download/module.json
    ```
 4. Clicca **Install**
 
