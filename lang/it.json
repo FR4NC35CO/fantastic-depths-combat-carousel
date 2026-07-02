@@ -2,6 +2,7 @@
   "FDCC": {
     "ModuleTitle": "Fantastic Depths Combat Carousel",
     "Round": "Round",
+    "Phase": "Fase",
     "SelectAction": "Seleziona...",
     "WarnActionsNotSelected": "Uno o più giocatori/PNG non hanno ancora selezionato un'azione di combattimento per questo round.",
     "WarnRollNotAllowedHold": "In modalità Mantieni Iniziativa non è possibile tirare l'iniziativa. L'iniziativa rimane invariata dal round precedente.",

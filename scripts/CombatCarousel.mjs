@@ -136,32 +136,56 @@ export class CombatCarousel {
     // Restore sorted turn index from combat flags (survives F5)
     const savedIdx = (combat ?? game.combat)?.getFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx');
     this._sortedTurnIdx = (typeof savedIdx === 'number') ? savedIdx : 0;
+    // In two-phase mode, align with the current Foundry combat.turn instead of the saved flag
+    if (this.isTwoPhaseMode && this.combat?.turns?.length) {
+      this._sortedTurnIdx = this._getSortedIdxForTurn(this.combat.turn ?? 0);
+    }
     // Shadow state for NPC actions synced via socket (bypasses Foundry permission restrictions)
     this._npcActions = new Map(); // combatantId -> action
   }
 
   get sortedCombatants() {
-    // In individual, individualChecklist and simpleIndividual modes, sort by initiative (desc), then action phase
+    // In individual, individualChecklist and simpleIndividual modes, follow combat.turns order
+    // (which FaDe sorts by action phase then initiative, matching the Combat Sequence Checklist)
     if (this.initiativeMode === 'individual' || this.initiativeMode === 'individualChecklist' || this.initiativeMode === 'simpleIndividual') {
+      if (this.combat?.turns?.length) {
+        const seen = new Set();
+        const ordered = [];
+        for (const c of this.combat.turns) {
+          if (!seen.has(c.id)) {
+            seen.add(c.id);
+            ordered.push(c);
+          }
+        }
+        // Fallback: append any combatants not present in combat.turns
+        for (const c of this.combat.combatants.contents) {
+          if (!seen.has(c.id)) ordered.push(c);
+        }
+        return ordered;
+      }
+      // Fallback if combat.turns is empty: sort by initiative desc
       return Array.from(this.combat.combatants.contents).sort((a, b) => {
         const ai = a.initiative ?? -Infinity;
         const bi = b.initiative ?? -Infinity;
         if (bi !== ai) return bi - ai;
-        // Same initiative: sort by action phase (slow weapons last)
-        const pa = getActionPhase(a, this.initiativeMode);
-        const pb = getActionPhase(b, this.initiativeMode);
-        if (pa !== pb) return pa - pb;
-        // Within slow phase (6), order by original action: fire/throw before attack
-        if (pa === ACTION_PHASE_ORDER.slow) {
-          const aa = a.actor?.system?.combat?.declaredAction;
-          const ba = b.actor?.system?.combat?.declaredAction;
-          const aIsMissile = aa === 'fire' || aa === 'throw';
-          const bIsMissile = ba === 'fire' || ba === 'throw';
-          if (aIsMissile && !bIsMissile) return -1; // a (missile) before b (melee)
-          if (!aIsMissile && bIsMissile) return 1;  // b (missile) before a (melee)
-        }
         return a.name.localeCompare(b.name);
       });
+    }
+    // In two-phase mode, use the order defined by Foundry/FaDe in combat.turns (first occurrence of each combatant)
+    if (this.isTwoPhaseMode && this.combat?.turns?.length) {
+      const seen = new Set();
+      const ordered = [];
+      for (const c of this.combat.turns) {
+        if (!seen.has(c.id)) {
+          seen.add(c.id);
+          ordered.push(c);
+        }
+      }
+      // Fallback: append any combatants not present in combat.turns
+      for (const c of this.combat.combatants.contents) {
+        if (!seen.has(c.id)) ordered.push(c);
+      }
+      return ordered;
     }
     // In group/checklist modes, sort by initiative (desc) then combat sequence phase
     if (this.isGroupMode) {
@@ -205,6 +229,10 @@ export class CombatCarousel {
     return this.initiativeMode === 'advancedGroup';
   }
 
+  get isTwoPhaseMode() {
+    return this.initiativeMode === 'advancedGroup';
+  }
+
   _getGroupInitiative(combatant) {
     if (!this.isGroupMode) return null;
     
@@ -240,6 +268,34 @@ export class CombatCarousel {
     return sameGroupCombatants[0].initiative;
   }
 
+  /**
+   * For two-phase (advancedGroup) mode: determine which phase (1 or 2) a given turn index represents.
+   * Each combatant appears twice in combat.turns; the first occurrence is phase 1, the second phase 2.
+   */
+  _getPhaseForTurn(turnIdx) {
+    const turns = this.combat?.turns;
+    if (!turns || !turns.length) return 1;
+    const combatant = turns[turnIdx];
+    if (!combatant) return 1;
+    let count = 0;
+    for (let i = 0; i <= turnIdx; i++) {
+      if (turns[i].id === combatant.id) count++;
+    }
+    return count;
+  }
+
+  /**
+   * For two-phase (advancedGroup) mode: map the active combat.turn index to the sortedCombatants index.
+   */
+  _getSortedIdxForTurn(turnIdx) {
+    // Prefer Foundry's active combatant (the single source of truth shown in the core tracker).
+    // In two-phase mode, combat.combatant is the current phase's active combatant.
+    const active = this.combat?.combatant ?? this.combat?.turns?.[turnIdx];
+    if (!active) return this._sortedTurnIdx;
+    const idx = this.sortedCombatants.findIndex(c => c.id === active.id);
+    return idx >= 0 ? idx : this._sortedTurnIdx;
+  }
+
   render(force = false) {
     if (this.rendered && !force) return this;
     this._buildDOM();
@@ -248,6 +304,13 @@ export class CombatCarousel {
     this._activateControlListeners();
     this._setHooks();
     this.rendered = true;
+    // Ensure the canvas selection matches the active carousel combatant after F5/reload
+    if (this.combat?.started) {
+      setTimeout(() => {
+        this._selectActiveToken();
+        this._guardTokenSelection(1000);
+      }, 100);
+    }
     let nextRound = 'reset';
     try { nextRound = game.settings.get(game.system.id, 'nextRound') ?? 'reset'; } catch(e) {}
     let initFormula = '?';
@@ -270,6 +333,7 @@ export class CombatCarousel {
     const initModeTooltip = this._getInitModeTooltip();
     const nextRoundTooltip = this._getNextRoundTooltip();
     const initLabel = game.i18n.lang === 'it' ? 'INIZIATIVA' : 'INITIATIVE';
+    const phase = this.isTwoPhaseMode ? this._getPhaseForTurn(this.combat.turn ?? 0) : null;
     html += `
     <div class="carousel-round-indicator">
       <span class="initiative-label">
@@ -281,6 +345,7 @@ export class CombatCarousel {
         <i class="fas fa-circle-info round-info-icon round-mode-icon" data-tooltip="${nextRoundTooltip}"></i>
       </span>
       <span class="round-number">${this.combat.round ?? 0}</span>
+      ${phase ? `<span class="phase-label">${game.i18n.localize('FDCC.Phase')}</span><span class="phase-number">${phase}</span>` : ''}
     </div>`;
 
     if (isGM) {
@@ -423,20 +488,26 @@ export class CombatCarousel {
     if (card) card.refresh();
   }
 
-  refreshCards() {
-    // Reorder cards in DOM to match current initiative order (important after tie-rerolls)
-    this._reorderCardsByInitiative();
+  _shouldSuppressActive() {
+    if (!this.combat) return true;
     const allHaveInit = !this.combat.combatants.some(c => c.initiative == null);
     const allActionsChosen = !this._hasUnselectedActions();
     const initiatives = this.combat.combatants.map(c => c.initiative).filter(i => i != null);
     const hasDuplicates = initiatives.length !== new Set(initiatives).size;
     const hasPendingRerolls = this._pendingTieRerolls.size > 0;
-    let suppressActive = false;
     if (this.initiativeMode === 'individual' || this.initiativeMode === 'individualChecklist' || this.initiativeMode === 'simpleIndividual') {
-      suppressActive = !allHaveInit || hasDuplicates || hasPendingRerolls;
-    } else if (this.isGroupMode) {
-      suppressActive = !allHaveInit || !allActionsChosen;
+      return !allHaveInit || hasDuplicates || hasPendingRerolls;
     }
+    if (this.isGroupMode) {
+      return !allHaveInit || !allActionsChosen;
+    }
+    return false;
+  }
+
+  refreshCards() {
+    // Reorder cards in DOM to match current initiative order (important after tie-rerolls)
+    this._reorderCardsByInitiative();
+    const suppressActive = this._shouldSuppressActive();
     const useInternalIdx2 = this.isGroupMode && this.combat.started && !suppressActive;
     const currentId2 = useInternalIdx2
       ? (this.sortedCombatants[this._sortedTurnIdx]?.id ?? null)
@@ -463,6 +534,103 @@ export class CombatCarousel {
     const cardRect = activeCard.getBoundingClientRect();
     const scrollLeft = activeCard.offsetLeft - container.offsetLeft - (containerRect.width / 2) + (cardRect.width / 2);
     container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+  }
+
+  /**
+   * Select and pan to the token of the active combatant.
+   * Ensures the scene selection follows the carousel turn.
+   */
+  _selectActiveToken() {
+    console.log(`FDCC | TOKEN DEBUG | _selectActiveToken called | user=${game.user.name} | combatStarted=${this.combat?.started} | isGroupMode=${this.isGroupMode} | combat.turn=${this.combat?.turn ?? '?'}`);
+    if (!this.combat?.started) {
+      console.log(`FDCC | TOKEN DEBUG | combat not started — abort`);
+      return;
+    }
+    if (this._shouldSuppressActive()) {
+      console.log(`FDCC | TOKEN DEBUG | active state not stable (initiatives/actions not ready) — abort token selection`);
+      return;
+    }
+    // In two-phase mode, mirror Foundry's active combatant exactly.
+    if (this.isTwoPhaseMode && this.combat.combatant) {
+      const idx = this.sortedCombatants.findIndex(c => c.id === this.combat.combatant.id);
+      if (idx >= 0) this._sortedTurnIdx = idx;
+    }
+    // In group mode, the carousel uses its own sorted index; in individual modes, use Foundry's combat.combatant
+    const active = this.isGroupMode ? this.sortedCombatants?.[this._sortedTurnIdx] : this.combat.combatant;
+    console.log(`FDCC | TOKEN DEBUG | active combatant=${active?.name ?? 'null'} | sortedTurnIdx=${this._sortedTurnIdx} | combat.turn=${this.combat?.turn ?? '?'}`);
+    if (!active) return;
+    const token = active.token?.object;
+    console.log(`FDCC | TOKEN DEBUG | token object=${token ? 'found' : 'null'} | visible=${token?.visible} | token.id=${token?.id}`);
+    if (!token || !token.visible) {
+      console.log(`FDCC | TOKEN DEBUG | token missing or not visible — abort`);
+      return;
+    }
+    const canObserve = active.actor?.testUserPermission(game.user, 'OBSERVER');
+    console.log(`FDCC | TOKEN DEBUG | canObserve=${canObserve}`);
+    if (!canObserve) return;
+    try {
+      const beforeSelected = canvas.tokens?.controlled?.map(t => t.name).join(', ') ?? 'none';
+      const released = canvas.tokens?.controlled?.length ?? 0;
+      canvas.tokens.releaseAll();
+      token.control({ releaseOthers: true });
+      canvas.animatePan(token.center);
+      console.log(`FDCC | TOKEN DEBUG | SUCCESS | selected ${active.name} | releasedPrevious=${released} | before=[${beforeSelected}]`);
+      // Two-phase safety: verify selection after short delays and retry if something else stole it
+      if (this.isTwoPhaseMode) {
+        const expectedId = token.id;
+        const verifyAndRetry = (attempt) => {
+          const selectedIds = canvas.tokens?.controlled?.map(t => t.id) ?? [];
+          const stillSelected = selectedIds.includes(expectedId);
+          console.log(`FDCC | TOKEN DEBUG | VERIFY-${attempt} | selected=[${selectedIds.join(', ')}] | expected=${active.name} (${expectedId}) | ok=${stillSelected}`);
+          if (!stillSelected) {
+            console.log(`FDCC | TOKEN DEBUG | RE-TRY-${attempt} | ${active.name} was deselected, re-selecting`);
+            canvas.tokens.releaseAll();
+            token.control({ releaseOthers: true });
+          }
+        };
+        [50, 200, 500].forEach((delay, idx) => {
+          setTimeout(() => verifyAndRetry(idx + 1), delay);
+        });
+      }
+    } catch (e) {
+      console.warn(`FDCC | TOKEN DEBUG | FAILED for ${active.name}:`, e);
+    }
+  }
+
+  /**
+   * Guard the token selection for a short period after a turn change.
+   * Some systems or race conditions may steal the selection; this re-applies it.
+   */
+  _guardTokenSelection(durationMs = 2000) {
+    if (this._tokenGuardInterval) clearInterval(this._tokenGuardInterval);
+    if (this._shouldSuppressActive()) {
+      console.log(`FDCC | TOKEN DEBUG | GUARD | skipped — active state not stable`);
+      return;
+    }
+    // In two-phase mode, guard the token that Foundry considers active.
+    if (this.isTwoPhaseMode && this.combat.combatant) {
+      const idx = this.sortedCombatants.findIndex(c => c.id === this.combat.combatant.id);
+      if (idx >= 0) this._sortedTurnIdx = idx;
+    }
+    const active = this.isGroupMode ? this.sortedCombatants?.[this._sortedTurnIdx] : this.combat.combatant;
+    if (!active?.token?.object) return;
+    const expectedId = active.token.object.id;
+    const start = Date.now();
+    this._tokenGuardInterval = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const selectedIds = canvas.tokens?.controlled?.map(t => t.id) ?? [];
+      const stillSelected = selectedIds.includes(expectedId);
+      if (!stillSelected) {
+        console.log(`FDCC | TOKEN DEBUG | GUARD | re-selecting ${active.name} (${expectedId}) | currently=[${selectedIds.join(', ')}] | elapsed=${elapsed}ms`);
+        canvas.tokens.releaseAll();
+        active.token.object.control({ releaseOthers: true });
+      }
+      if (elapsed >= durationMs) {
+        clearInterval(this._tokenGuardInterval);
+        this._tokenGuardInterval = null;
+        console.log(`FDCC | TOKEN DEBUG | GUARD | ended after ${elapsed}ms`);
+      }
+    }, 100);
   }
 
   /**
@@ -502,6 +670,10 @@ export class CombatCarousel {
     if (roundEl) roundEl.textContent = this.combat.round ?? 0;
     const roundIcon = this.element?.querySelector('.round-mode-icon');
     if (roundIcon) roundIcon.dataset.tooltip = this._getNextRoundTooltip();
+    if (this.isTwoPhaseMode) {
+      const phaseEl = this.element?.querySelector('.phase-number');
+      if (phaseEl) phaseEl.textContent = this._getPhaseForTurn(this.combat.turn ?? 0);
+    }
   }
 
   _updateStartEndButtons() {
@@ -835,6 +1007,16 @@ export class CombatCarousel {
     return this.combat.combatants.every(c => c.initiative != null);
   }
 
+  /**
+   * True if there are combatants marked as waiting for the current round
+   * who still need to roll initiative (for next round's ordering).
+   */
+  _hasWaitingNewcomersNeedingInit() {
+    return this.combat.combatants.some(c =>
+      c.getFlag('fantastic-depths-combat-carousel', 'waitingForRound') && c.initiative == null
+    );
+  }
+
   _hasUnselectedActions() {
     // In simpleIndividual/individual mode: no actions to select, always return false
     if (this.initiativeMode === 'simpleIndividual' || this.initiativeMode === 'individual') return false;
@@ -1047,7 +1229,12 @@ export class CombatCarousel {
     // Round 0/1: allow normal initiative rolling
     let nextRound = 'reset';
     try { nextRound = game.settings.get(game.system.id, 'nextRound') ?? 'reset'; } catch(e) {}
-    if (nextRound === 'hold' && this.combat?.round > 1) {
+    const hasWaitingPCWithoutInit = this.combat.combatants.some(c =>
+      c.actor?.hasPlayerOwner &&
+      c.getFlag('fantastic-depths-combat-carousel', 'waitingForRound') &&
+      c.initiative == null
+    );
+    if (nextRound === 'hold' && this.combat?.round > 1 && !hasWaitingPCWithoutInit) {
       btn.disabled = true;
       btn.classList.remove('roll-pcs-ready');
       return;
@@ -1056,8 +1243,9 @@ export class CombatCarousel {
     // Always check player initiative specifically — NPC init from previous round must not block roll-pcs.
     // If we are in action-selection phase (_resetPendingIds not empty), treat initiative as not yet rolled
     // (old initiative values from previous round are still in DB but shouldn't block the button).
+    // Newly joined combatants that are waiting for the current round may still roll for next round.
     const anyPending = (this._resetPendingIds?.size ?? 0) > 0;
-    const initiativeRolled = !anyPending && this._hasPlayerInitiativeRolled();
+    const initiativeRolled = !anyPending && !hasWaitingPCWithoutInit && this._hasPlayerInitiativeRolled();
     
     // CRITICAL FIX: In group mode, block roll-pc after round 0 (only allow in first round)
     const isGroupModeAfterRound0 = this.isGroupMode && this.combat?.round > 0;
@@ -1127,7 +1315,12 @@ export class CombatCarousel {
       const hasDuplicates = initiatives.length !== new Set(initiatives).size;
       const hasPendingTie = this._pendingTieRerolls?.size > 0;
       const tieBlocked = (this.initiativeMode === 'individual' || this.initiativeMode === 'individualChecklist' || this.initiativeMode === 'simpleIndividual') && (hasDuplicates || hasPendingTie);
-      const allReady = !anyPending && !tieBlocked && (isSimpleMode || allActionsChosen) && !this._allInitiativeRolled();
+      // Newly joined combatants waiting for the current round may still roll initiative for next round,
+      // so they don't count as "missing" for the roll-all glow.
+      const allRelevantRolled = this.combat.combatants.every(c =>
+        c.initiative != null || c.getFlag('fantastic-depths-combat-carousel', 'waitingForRound')
+      );
+      const allReady = !anyPending && !tieBlocked && (isSimpleMode || allActionsChosen) && !allRelevantRolled;
       if (allBtn) allBtn.classList.toggle('roll-all-ready', allReady);
       if (npcBtn) npcBtn.classList.toggle('roll-npc-ready', !tieBlocked && npcReady);
     }
@@ -1163,9 +1356,25 @@ export class CombatCarousel {
     if (!['individual', 'individualChecklist', 'simpleIndividual', 'group', 'advancedGroup'].includes(this.initiativeMode)) {
       return this.combat.nextTurn();
     }
+    if (this.isTwoPhaseMode) {
+      // In advancedGroup (2-phase) mode, each combatant appears twice in combat.turns.
+      // Move through every combat.turn entry instead of jumping to the next round.
+      // Skip entries for combatants waiting for the current round.
+      let nextTurn = this.combat.turn + 1;
+      while (nextTurn < this.combat.turns.length && this.combat.turns[nextTurn].getFlag('fantastic-depths-combat-carousel', 'waitingForRound')) {
+        nextTurn++;
+      }
+      if (nextTurn >= this.combat.turns.length) {
+        return this.combat.nextRound();
+      }
+      return this.combat.update({ turn: nextTurn });
+    }
     if (this.isGroupMode) {
       const sorted = this.sortedCombatants;
-      const nextIdx = this._sortedTurnIdx + 1;
+      let nextIdx = this._sortedTurnIdx + 1;
+      while (nextIdx < sorted.length && sorted[nextIdx].getFlag('fantastic-depths-combat-carousel', 'waitingForRound')) {
+        nextIdx++;
+      }
       if (nextIdx >= sorted.length) {
         this._sortedTurnIdx = 0;
         return this.combat.nextRound();
@@ -1174,6 +1383,10 @@ export class CombatCarousel {
       this.refreshCards();
       console.log(`FDCC | nextTurn() | about to call _playTurnSound(${nextIdx})`);
       this._playTurnSound(nextIdx);
+      this._selectActiveToken();
+      // Align Foundry's combat.turn with the carousel so Foundry selects/pans the token natively
+      const activeTurnIdx = this.combat.turns.findIndex(c => c.id === sorted[nextIdx].id);
+      if (activeTurnIdx >= 0) this.combat.update({ turn: activeTurnIdx });
       if (game.user.isGM) {
         this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', nextIdx);
       } else {
@@ -1189,7 +1402,10 @@ export class CombatCarousel {
     const sorted = this.sortedCombatants;
     const currentId = this.combat.combatant?.id;
     const currentIdx = sorted.findIndex(c => c.id === currentId);
-    const nextIdx = currentIdx + 1;
+    let nextIdx = currentIdx + 1;
+    while (nextIdx < sorted.length && sorted[nextIdx].getFlag('fantastic-depths-combat-carousel', 'waitingForRound')) {
+      nextIdx++;
+    }
     if (nextIdx >= sorted.length) return this.combat.nextRound();
     const nextCombatant = sorted[nextIdx];
     const turnIdx = this.combat.turns.findIndex(c => c.id === nextCombatant.id);
@@ -1200,14 +1416,34 @@ export class CombatCarousel {
     if (!['individual', 'individualChecklist', 'simpleIndividual', 'group', 'advancedGroup'].includes(this.initiativeMode)) {
       return this.combat.previousTurn();
     }
-    if (this.isGroupMode) {
-      if (this._sortedTurnIdx <= 0) {
-        // Going to previous round: set to last combatant of that round
-        this._sortedTurnIdx = Math.max(0, this.sortedCombatants.length - 1);
+    if (this.isTwoPhaseMode) {
+      // Skip entries for combatants waiting for the current round.
+      let prevTurn = this.combat.turn - 1;
+      while (prevTurn >= 0 && this.combat.turns[prevTurn].getFlag('fantastic-depths-combat-carousel', 'waitingForRound')) {
+        prevTurn--;
+      }
+      if (prevTurn < 0) {
         return this.combat.previousRound();
       }
-      this._sortedTurnIdx -= 1;
+      return this.combat.update({ turn: prevTurn });
+    }
+    if (this.isGroupMode) {
+      const sorted = this.sortedCombatants;
+      let prevIdx = this._sortedTurnIdx - 1;
+      while (prevIdx >= 0 && sorted[prevIdx].getFlag('fantastic-depths-combat-carousel', 'waitingForRound')) {
+        prevIdx--;
+      }
+      if (prevIdx < 0) {
+        // Going to previous round: set to last combatant of that round
+        this._sortedTurnIdx = Math.max(0, sorted.length - 1);
+        return this.combat.previousRound();
+      }
+      this._sortedTurnIdx = prevIdx;
       this.refreshCards();
+      this._selectActiveToken();
+      // Align Foundry's combat.turn with the carousel
+      const activeTurnIdx = this.combat.turns.findIndex(c => c.id === sorted[this._sortedTurnIdx].id);
+      if (activeTurnIdx >= 0) this.combat.update({ turn: activeTurnIdx });
       if (game.user.isGM) {
         this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', this._sortedTurnIdx);
       } else {
@@ -1223,8 +1459,12 @@ export class CombatCarousel {
     const sorted = this.sortedCombatants;
     const currentId = this.combat.combatant?.id;
     const currentIdx = sorted.findIndex(c => c.id === currentId);
-    if (currentIdx <= 0) return this.combat.previousRound();
-    const prevCombatant = sorted[currentIdx - 1];
+    let prevIdx = currentIdx - 1;
+    while (prevIdx >= 0 && sorted[prevIdx].getFlag('fantastic-depths-combat-carousel', 'waitingForRound')) {
+      prevIdx--;
+    }
+    if (prevIdx < 0) return this.combat.previousRound();
+    const prevCombatant = sorted[prevIdx];
     const turnIdx = this.combat.turns.findIndex(c => c.id === prevCombatant.id);
     if (turnIdx >= 0) this.combat.update({ turn: turnIdx });
   }
@@ -1245,14 +1485,17 @@ export class CombatCarousel {
     // CRITICAL FIX: Allow auto-roll in reroll mode for new rounds, but block mid-round joins
     // Don't auto-roll when a single combatant joins mid-round and rolls initiative
     // But DO allow auto-roll at the start of new rounds in reroll mode (even if turn > 0 from previous round)
-    if (this.isIndividualMode && this.combat.turn > 0) {
-      // Check if this is a new round start (initiative just cleared) vs mid-round combatant join
-      const hasInitiativeCleared = this.combat.combatants.some(c => c.initiative == null);
+    if (this.isIndividualMode) {
+      // Check if this is a new round start (initiative just cleared) vs mid-round combatant join.
+      // A new round start means EVERY combatant has null initiative (initiatives were cleared).
+      // A mid-round join means only the newly added combatant(s) have null initiative.
+      // This applies regardless of combat.turn value (turn 0 is also a valid mid-round state).
+      const hasInitiativeCleared = this.combat.combatants.every(c => c.initiative == null);
       if (!hasInitiativeCleared) {
-        _log(`_autoRollIfReady | skipping auto-roll - individual mode & turn=${this.combat.turn} > 0 (mid-round, initiatives not cleared)`);
+        _log(`_autoRollIfReady | skipping auto-roll - individual mode (mid-round join, not all initiatives cleared)`);
         return;
       } else {
-        _log(`_autoRollIfReady | allowing auto-roll - individual mode & turn=${this.combat.turn} > 0 (new round, initiatives cleared)`);
+        _log(`_autoRollIfReady | allowing auto-roll - individual mode (all initiatives cleared)`);
       }
     }
     // In group mode FaDe assigns one initiative per group (not per combatant), so use _hasInitiativeRolled
@@ -1306,6 +1549,11 @@ export class CombatCarousel {
         const integerInits = initiatives.filter(i => Number.isInteger(i));
         const hasDuplicates = integerInits.length !== new Set(integerInits).size;
         if (allRolled && !hasDuplicates && this._pendingTieRerolls.size === 0) {
+          // If any combatant joined mid-round and is waiting for the next round, do not reset the turn here.
+          const hasWaiting = this.combat.combatants.some(c =>
+            c.getFlag('fantastic-depths-combat-carousel', 'waitingForRound')
+          );
+          if (hasWaiting) { _log(`_autoRollIfReady | post-rollAll fix skipped — waitingForRound present`); return; }
           // Use highest raw initiative, NOT sortedCombatants[0] which applies action-phase sort
           const first = Array.from(this.combat.combatants).reduce((best, c) =>
             (c.initiative != null && (best == null || c.initiative > best.initiative)) ? c : best, null);
@@ -1333,17 +1581,21 @@ export class CombatCarousel {
     const hasDuplicates = integerInits.length !== new Set(integerInits).size;
     if (hasDuplicates) return;
     if (this._pendingTieRerolls?.size > 0) return;
-    // Use highest raw initiative, NOT sortedCombatants[0] which applies action-phase sort
-    // (slow weapon combatants get pushed down in sort even if they have highest initiative)
-    const first = Array.from(this.combat.combatants).reduce((best, c) =>
-      (c.initiative != null && (best == null || c.initiative > best.initiative)) ? c : best, null);
+    // If any combatant is waiting for the current round (newly joined mid-round),
+    // do not reset the turn — the active combatant must stay where it is.
+    const hasWaiting = this.combat.combatants.some(c =>
+      c.getFlag('fantastic-depths-combat-carousel', 'waitingForRound')
+    );
+    if (hasWaiting) { _log('_fixTurnToHighestInit | skipped — waitingForRound combatants present'); return; }
+    // Use the first entry in combat.turns — FaDe already sorts by action phase then initiative,
+    // so combat.turns[0] is the combatant that should act first according to the Combat Sequence.
+    const first = this.combat.turns[0];
     if (!first) return;
-    const turnIdx = this.combat.turns.findIndex(c => c.id === first.id);
-    _log(`_fixTurnToHighestInit | first=${first.name} (${first.initiative}) turnIdx=${turnIdx} currentTurn=${this.combat.turn} | turns order: ${this.combat.turns.map(c => c.name + ':' + c.initiative).join(', ')}`);
-    // Always update turn if the current active combatant is not the highest-initiative one
+    _log(`_fixTurnToHighestInit | first=${first.name} (${first.initiative}) turnIdx=0 currentTurn=${this.combat.turn} | turns order: ${this.combat.turns.map(c => c.name + ':' + c.initiative).join(', ')}`);
+    // Always update turn if the current active combatant is not the first in combat.turns
     const currentActiveId = this.combat.combatant?.id;
-    if (first.id !== currentActiveId && turnIdx >= 0) {
-      this.combat.update({ turn: turnIdx });
+    if (first.id !== currentActiveId && this.combat.turn !== 0) {
+      this.combat.update({ turn: 0 });
     }
   }
 
@@ -1517,6 +1769,46 @@ export class CombatCarousel {
 
     this._hooks.push({ name: 'updateCombatant', id: Hooks.on('updateCombatant', (combatant, changes) => {
       if (combatant.parent !== this.combat) return;
+      // When initiative changes, the active combatant may have changed position or identity.
+      // Re-apply the canvas selection after the batch of updates settles.
+      if (changes?.initiative !== undefined) {
+        if (this._initiativeChangeTimeout) clearTimeout(this._initiativeChangeTimeout);
+          this._initiativeChangeTimeout = setTimeout(() => {
+          this._initiativeChangeTimeout = null;
+          const active = this.isGroupMode ? this.sortedCombatants?.[this._sortedTurnIdx] : this.combat.combatant;
+          console.log(`FDCC | TOKEN DEBUG | initiative batch settled | active=${active?.name ?? '?'} | refreshing cards & re-selecting token`);
+          // In group/advancedGroup, after initiative settles the turn must point to the top of the new order.
+          // Otherwise the carousel/canvas may stay on a combatant from the previous turn.
+          // However, if a combatant joined mid-round and is waiting for the next round, do NOT
+          // reset the turn — the active combatant must stay where it is.
+          const hasWaiting = this.combat.combatants.some(c =>
+            c.getFlag('fantastic-depths-combat-carousel', 'waitingForRound')
+          );
+          if (this.isGroupMode && game.user.isGM && this.combat?.started && this.combat.turn !== 0 && !hasWaiting) {
+            console.log(`FDCC | TOKEN DEBUG | initiative changed — forcing combat.turn=0 to match new order`);
+            this.combat.update({ turn: 0 });
+            return;
+          } else if (hasWaiting) {
+            // Mid-round join: keep the active card on the combatant that was active before the join,
+            // even if combat.turns has re-sorted underneath. This prevents a flash onto the new entry.
+            const preservedId = this._midRoundJoinActiveId;
+            if (preservedId) {
+              const preservedIdx = this.sortedCombatants.findIndex(c => c.id === preservedId);
+              if (preservedIdx >= 0 && preservedIdx !== this._sortedTurnIdx) {
+                this._sortedTurnIdx = preservedIdx;
+              }
+            }
+            console.log(`FDCC | TOKEN DEBUG | initiative changed with waitingForRound — skipping auto token selection`);
+          } else {
+            this._selectActiveToken();
+            this._guardTokenSelection(1000);
+          }
+          // Refresh only after _sortedTurnIdx has been corrected for mid-round joins.
+          this.refreshCards();
+          this._scrollToActive();
+          this._updateRoundIndicator();
+        }, 150);
+      }
       // When choseNothing flag is set, remove from pending set
       if (!this._resetPendingIds?.size) return;
       const choseNothing = changes?.flags?.['fantastic-depths-combat-carousel']?.choseNothing;
@@ -1525,6 +1817,22 @@ export class CombatCarousel {
         _log(`updateCombatant | ${combatant.name} chose Nothing — removed from _resetPendingIds (${this._resetPendingIds.size} remaining)`);
         this.refreshCards();
         this._autoRollIfReady();
+      }
+    }) });
+
+    // DEBUG: Track token selection changes to diagnose race conditions with FaDe/other systems
+    this._hooks.push({ name: 'controlToken', id: Hooks.on('controlToken', (token, controlled) => {
+      if (!this.combat?.started) return;
+      const active = this.isGroupMode ? this.sortedCombatants?.[this._sortedTurnIdx] : this.combat.combatant;
+      const activeId = active?.token?.object?.id;
+      const selected = canvas.tokens?.controlled?.map(t => `${t.name} (${t.id})`).join(', ') ?? 'none';
+      console.log(`FDCC | TOKEN DEBUG | controlToken | token=${token.name} (${token.id}) | controlled=${controlled} | selected=[${selected}] | active=${active?.name ?? '?'} (${activeId ?? '?'}) | user=${game.user.name}`);
+      // During a mid-round join, immediately reject selection of any token other than the
+      // active one to prevent the canvas from flashing onto the newly added token.
+      if (this._midRoundJoinActiveId && controlled && activeId && token.id !== activeId) {
+        console.log(`FDCC | TOKEN DEBUG | controlToken | mid-round join guard — rejecting ${token.name}`);
+        this._selectActiveToken();
+        this._guardTokenSelection(2000);
       }
     }) });
 
@@ -1538,11 +1846,34 @@ export class CombatCarousel {
         this._scrollToActive();
         console.log(`FDCC | updateCombat() | about to call _playTurnSound(${flagIdx}) - PLAYER ONLY`);
         this._playTurnSound(flagIdx);
+        console.log(`FDCC | TOKEN DEBUG | calling _selectActiveToken from sortedTurnIdx sync`);
+        this._selectActiveToken();
+        this._guardTokenSelection(2000);
       }
       // Detect turn changes
       if ('turn' in updates) {
-        const active = combat.combatant;
-        _log(`↷ TURN CHANGE | round=${combat.round} turn=${updates.turn} | active=${active?.name ?? '?'} (init: ${active?.initiative ?? '?'})`);
+        // When a new round begins, Foundry may emit a transient turn=0 before the
+        // initiatives are re-rolled. Skip it to avoid flashing the wrong combatant,
+        // but do NOT return so the round-change block below still runs.
+        const skipTurnChange = ('round' in updates) && updates.round > 1 && updates.turn === 0;
+        if (!skipTurnChange) {
+          const active = combat.combatant;
+          _log(`↷ TURN CHANGE | round=${combat.round} turn=${updates.turn} | active=${active?.name ?? '?'} (init: ${active?.initiative ?? '?'})`);
+          if (this.isTwoPhaseMode) {
+            // Mirror the core tracker exactly: the active combatant is the source of truth.
+            this._sortedTurnIdx = this._getSortedIdxForTurn(updates.turn);
+            this.refreshCards();
+            this._scrollToActive();
+            this._updateRoundIndicator();
+            console.log(`FDCC | updateCombat() | about to call _playTurnSound(${this._sortedTurnIdx}) - PLAYER ONLY`);
+            this._playTurnSound(this._sortedTurnIdx);
+          }
+          console.log(`FDCC | TOKEN DEBUG | calling _selectActiveToken from turn change`);
+          this._selectActiveToken();
+          this._guardTokenSelection(2000);
+        } else {
+          console.log(`FDCC | TOKEN DEBUG | skipping transient turn=0 during round change`);
+        }
       }
       // When combat starts (round 1), fix turn order for individual modes
       if ('round' in updates && updates.round === 1) {
@@ -1587,6 +1918,11 @@ export class CombatCarousel {
           this.refreshCards();
           _log(`updateCombat | non-GM immediate refresh`);
         }
+        // In group mode, reset the carousel active index to the top of the order before refreshing.
+        if (this.isGroupMode) {
+          this._sortedTurnIdx = 0;
+          if (game.user.isGM) this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', 0);
+        }
         // CRITICAL FIX: When GM receives round change (triggered by client passing last turn),
         // force immediate refresh with all combatants marked as pending so declaredActions show "Seleziona..." (yellow)
         // This applies to individual modes AND group modes
@@ -1602,10 +1938,6 @@ export class CombatCarousel {
             _log(`updateCombat | GM deferred refresh after round change | mode=${this.initiativeMode}`);
             this.refreshCards();
           }, 1500);
-        }
-        if (this.isGroupMode) {
-          this._sortedTurnIdx = 0;
-          if (game.user.isGM) this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', 0);
         }
         // For individual modes: fix turn=0 so no card appears "active" at start of new round
         if ((this.initiativeMode === 'individual' || this.initiativeMode === 'individualChecklist' || this.initiativeMode === 'simpleIndividual') && game.user.isGM) {

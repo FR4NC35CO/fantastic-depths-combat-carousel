@@ -6,7 +6,7 @@
 
 [English](#english) | [Italiano](#italiano)
 
-<!-- <img src="img/combat-carousel-main.jpg" alt="Combat Carousel" width="80%"> -->
+<img src="img/fantastic-depths-combat-carousel-banner.jpg" alt="Combat Carousel" width="100%">
 
 <a name="english"></a>
 ## English
@@ -15,13 +15,11 @@ A **Combat Carousel** module for Foundry VTT v14, designed specifically for the 
 
 ### Compatibility
 - **Foundry VTT**: v14.363+
-- **System Requirements**: Fantastic Depths v1.0.13+
-- **Module Version**: 1.1.0
+- **System Requirements**: Fantastic Depths v1.0.13 – v1.2.0
+- **Module Version**: 1.2.0
 - **Socket Support**: Yes (multi-client synchronization)
 
 ### Installation
-#### Method 1: Manifest URL (Recommended)
-
 1. Open Foundry VTT and go to **Add-on Modules**
 2. Click **Install Module**
 3. Enter this URL in the **Manifest URL** field:
@@ -29,13 +27,6 @@ A **Combat Carousel** module for Foundry VTT v14, designed specifically for the 
    https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/latest/download/module.json
    ```
 4. Click **Install**
-
-#### Method 2: Manual
-
-1. Download the `.zip` file from the [Releases](https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases) section
-2. Extract to the `Data/modules/` folder of Foundry VTT
-3. Rename the folder to `fantastic-depths-combat-carousel`
-4. Restart Foundry VTT
 
 ### Features
 
@@ -55,7 +46,7 @@ The module supports 5 distinct initiative modes compatible with Fantastic Depths
 | **individual** | Individual initiative with slow weapon support |
 | **individualChecklist** | Full individual initiative with action declaration required |
 | **group** | Group-based initiative (one roll per side) |
-| **advancedGroup** | Enhanced group mode with slow weapon and action phase ordering |
+| **advancedGroup** | Group (2-Part Sequence): separates combat into two phases — fast actions first, then slow weapon actions. Each phase follows the Combat Sequence Checklist (movement → missile → magic → melee) with initiative ordering within each phase |
 
 #### 🔄 Round Management Modes
 Three round transition modes supporting different gameplay styles:
@@ -159,6 +150,14 @@ For bugs, suggestions, or support:
 - Multi-client synchronization stability improvements
 - Removed debug console logging
 
+#### v1.2.0
+- **Carousel aligned to Combat Tracker**: Individual modes (individual, individualChecklist, simpleIndividual) now follow `combat.turns` order from FaDe, matching the Combat Sequence Checklist
+- **First turn fix**: Respects action phase ordering instead of highest numerical initiative
+- **Mid-round join (group mode)**: New combatant correctly marked as waitingForRound, active combatant preserved without interruption
+- **Token selection guard**: Prevents canvas flash during mid-round joins
+- **Group mode round change**: Correct active card on round reset
+- Compatibility verified with Fantastic Depths v1.1.1 – v1.2.0
+
 #### v1.1.0
 - Foundry VTT v14.364 verified compatibility
 - Added compact, localized initiative chat messages (EN/IT)
@@ -184,13 +183,11 @@ Modulo **Combat Carousel** per Foundry VTT v14, progettato specificamente per il
 
 ### Compatibilità
 - **Foundry VTT**: v14.363+
-- **Requisiti Sistema**: Fantastic Depths v1.0.13+
-- **Versione Modulo**: 1.1.0
+- **Requisiti Sistema**: Fantastic Depths v1.0.13 – v1.2.0
+- **Versione Modulo**: 1.2.0
 - **Supporto Socket**: Sì (sincronizzazione multi-client)
 
 ### Installazione
-#### Metodo 1: Manifest URL (Consigliato)
-
 1. Apri Foundry VTT e vai nella sezione **Add-on Modules**
 2. Clicca **Install Module**
 3. Inserisci questo URL nel campo **Manifest URL**:
@@ -198,13 +195,6 @@ Modulo **Combat Carousel** per Foundry VTT v14, progettato specificamente per il
    https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases/latest/download/module.json
    ```
 4. Clicca **Install**
-
-#### Metodo 2: Manuale
-
-1. Scarica il file `.zip` dalla sezione [Releases](https://github.com/FR4NC35CO/fantastic-depths-combat-carousel/releases)
-2. Estrai nella cartella `Data/modules/` di Foundry VTT
-3. Rinomina la cartella in `fantastic-depths-combat-carousel`
-4. Riavvia Foundry VTT
 
 ### Caratteristiche
 
@@ -224,7 +214,7 @@ Il modulo supporta 5 distinte modalità di iniziativa compatibili con Fantastic 
 | **individual** | Iniziativa individuale con supporto armi lente |
 | **individualChecklist** | Iniziativa individuale completa con dichiarazione azioni richiesta |
 | **group** | Iniziativa per gruppi (un tiro per lato) |
-| **advancedGroup** | Modalità gruppo avanzata con armi lente e ordine per fase azione |
+| **advancedGroup** | Gruppo (Sequenza in 2 Fasi): separa il combattimento in due fasi — azioni veloci prima, poi azioni con armi lente. Ogni fase segue la Combat Sequence Checklist (movimento → missile → magia → mischia) con ordine iniziativa all'interno di ogni fase |
 
 #### 🔄 Modalità di Gestione Round
 Tre modalità di transizione round che supportano diversi stili di gioco:
@@ -327,6 +317,14 @@ Per bug, suggerimenti o supporto:
 - Feedback audio per eventi di combattimento (inizio combat, nuovo round, il tuo turno)
 - Miglioramenti stabilità sincronizzazione multi-client
 - Rimosso logging console debug
+
+#### v1.2.0
+- **Carosello allineato al Combat Tracker**: Le modalità individuali (individual, individualChecklist, simpleIndividual) ora seguono l'ordine `combat.turns` di FaDe, rispettando la Combat Sequence Checklist
+- **Fix primo turno**: Rispetta l'ordine per fase d'azione invece dell'iniziativa numerica più alta
+- **Ingresso a metà round (modalità gruppo)**: Nuovo combattente correttamente marcato come waitingForRound, combattente attivo preservato
+- **Guardia selezione token**: Previene flash canvas durante ingressi a metà round
+- **Cambio round modalità gruppo**: Card attiva corretta al reset round
+- Compatibilità verificata con Fantastic Depths v1.1.1 – v1.2.0
 
 #### v1.1.0
 - Compatibilità verificata con Foundry VTT v14.364

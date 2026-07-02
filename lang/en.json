@@ -2,6 +2,7 @@
   "FDCC": {
     "ModuleTitle": "Fantastic Depths Combat Carousel",
     "Round": "Round",
+    "Phase": "Phase",
     "SelectAction": "Select...",
     "WarnActionsNotSelected": "One or more characters/NPCs didn't select their combat action yet for this round.",
     "WarnRollNotAllowedHold": "Rolling initiative is not allowed in Hold Initiative mode. Initiative values remain unchanged from the previous round.",

@@ -14,3 +14,7 @@ Thumbs.db
 VERSION
 *.zip
 backups/
+
+docs/
+*.bak
+deploy.ps1

@@ -8,7 +8,7 @@
       "discord": "fr4nc35c0"
     }
   ],
-  "version": "1.1.0",
+  "version": "1.2.0",
   "compatibility": {
     "minimum": "14",
     "verified": "14.364"
@@ -20,7 +20,7 @@
         "type": "system",
         "compatibility": {
           "minimum": "1.0.13",
-          "verified": "1.1.0"
+          "verified": "1.2.0"
         }
       }
     ]

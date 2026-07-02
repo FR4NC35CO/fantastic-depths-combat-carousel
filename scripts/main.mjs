@@ -353,10 +353,26 @@ Hooks.on('createCombatant', async (combatant) => {
     // Special handling for group modes when combatant joins after round 0
     if (combat?.started && combat.round > 0 && (carousel.isGroupMode || carousel.isAdvancedGroupMode)) {
       console.log(`FDCC:main | createCombatant | ${combatant.name} | round=${combat.round} | mode=${carousel.initiativeMode}`);
-      // Assign current group initiative to new combatant
+      // Capture the currently active combatant BEFORE the new combatant is added and reorders combat.turns.
+      // In group mode, adding a combatant re-sorts combat.turns by initiative, so the numeric combat.turn
+      // index may end up pointing to a different combatant. We must restore the active turn afterwards.
+      const activeBefore = combat.turns[combat.turn];
+      const activeBeforeId = activeBefore?.id;
+      const activeBeforeName = activeBefore?.name;
+      const activeBeforeTurn = combat.turn;
+      // Remember the active combatant across the re-sort so intermediate refreshes don't flash
+      // the active card onto the newly joined combatant.
+      carousel._midRoundJoinActiveId = activeBeforeId;
+      // Lock the canvas selection onto the active token immediately to prevent the new token
+      // from flashing onto the scene when the GM adds it.
+      carousel._selectActiveToken();
+      carousel._guardTokenSelection(2000);
+
+      // Assign current group initiative to new combatant and wait for it to apply,
+      // so the subsequent turn restoration sees the final re-sorted combat.turns.
       const groupInitiative = carousel._getGroupInitiative(combatant);
       if (groupInitiative !== null) {
-        combatant.update({ initiative: groupInitiative });
+        await combatant.update({ initiative: groupInitiative });
       }
       
       // Mark existing combatants with "nothing" action as waiting for next round
@@ -375,6 +391,56 @@ Hooks.on('createCombatant', async (combatant) => {
       if (combatant.actor) {
         await combatant.actor.update({ 'system.combat.declaredAction': 'nothing' });
         await combatant.setFlag('fantastic-depths-combat-carousel', 'choseNothing', true);
+      }
+
+      // Pre-align the carousel's active index with the preserved active combatant so the
+      // first refresh after the join doesn't flash onto the newly added combatant.
+      if (activeBeforeId && combat.combatant?.id === activeBeforeId) {
+        const sortedIdx = carousel.sortedCombatants.findIndex(c => c.id === activeBeforeId);
+        if (sortedIdx >= 0 && sortedIdx !== carousel._sortedTurnIdx) {
+          carousel._sortedTurnIdx = sortedIdx;
+        }
+      }
+
+      // Restore the active turn to the combatant that was active before the join.
+      // combat.turns re-sorts asynchronously after the initiative assignment; use a polling
+      // loop so we keep correcting the turn until the active combatant is the one we captured.
+      if (activeBeforeId) {
+        let attempts = 0;
+        const maxAttempts = 12;
+        const tryRestore = () => {
+          const combatNow = carousel.combat;
+          if (!combatNow || carousel._roundChanging) return;
+          const currentActiveId = combatNow.combatant?.id;
+          if (currentActiveId === activeBeforeId) {
+            // The active combatant is correct, but its index in sortedCombatants may have changed
+            // because combat.turns re-sorted. Synchronize _sortedTurnIdx and refresh so the
+            // carousel active card matches the real active combatant.
+            const sortedIdx = carousel.sortedCombatants.findIndex(c => c.id === activeBeforeId);
+            if (sortedIdx >= 0 && sortedIdx !== carousel._sortedTurnIdx) {
+              console.log(`FDCC:main | createCombatant | syncing _sortedTurnIdx (${carousel._sortedTurnIdx} -> ${sortedIdx}) for restored ${activeBeforeName}`);
+              carousel._sortedTurnIdx = sortedIdx;
+              carousel.refreshCards();
+              carousel._scrollToActive();
+              carousel._updateRoundIndicator();
+            }
+            console.log(`FDCC:main | createCombatant | active combatant restored (${activeBeforeName})`);
+            carousel._midRoundJoinActiveId = null;
+            return;
+          }
+          const turnIdx = combatNow.turns.findIndex(c => c.id === activeBeforeId);
+          if (turnIdx >= 0 && turnIdx !== combatNow.turn) {
+            console.log(`FDCC:main | createCombatant | restoring active combatant=${activeBeforeName} (turn=${combatNow.turn} -> ${turnIdx}) attempt=${attempts + 1}`);
+            combatNow.update({ turn: turnIdx });
+          }
+          attempts++;
+          if (attempts < maxAttempts) {
+            setTimeout(tryRestore, 250);
+          } else {
+            console.log(`FDCC:main | createCombatant | gave up restoring active combatant=${activeBeforeName}`);
+          }
+        };
+        setTimeout(tryRestore, 250);
       }
     }
     // Special handling for individual modes when combatant joins after round 0
@@ -485,16 +551,24 @@ Hooks.on('updateCombatant', (combatant, updates) => {
             const firstCombatant = sorted[0];
             if (firstCombatant) {
               const combat = carousel.combat;
-              // CRITICAL FIX: Don't reset turn to first combatant during mid-round individual modes
-              // Only reset at round 0 (start) or when turn is already 0
-              if (combat.turn === 0) {
+              // CRITICAL FIX: Don't reset turn to first combatant during mid-round individual modes.
+              // If combat has started, preserve the currently active combatant after re-ordering.
+              // Only reset to the first combatant if combat is not yet started (or has no active turn).
+              const currentActive = combat.turns[combat.turn];
+              if (!combat.started || !currentActive) {
                 const turnIdx = combat.turns.findIndex(c => c.id === firstCombatant.id);
                 if (turnIdx >= 0 && turnIdx !== combat.turn) {
-                  console.log(`FDCC | updateCombatant | resetting turn to first=${firstCombatant.name} (round 0)`);
+                  console.log(`FDCC | updateCombatant | resetting turn to first=${firstCombatant.name} (combat not started)`);
                   combat.update({ turn: turnIdx });
                 }
               } else {
-                console.log(`FDCC | updateCombatant | skipping turn reset - mid-round (turn=${combat.turn})`);
+                const turnIdx = combat.turns.findIndex(c => c.id === currentActive.id);
+                if (turnIdx >= 0 && turnIdx !== combat.turn) {
+                  console.log(`FDCC | updateCombatant | preserving active combatant=${currentActive.name} (turn=${combat.turn} -> ${turnIdx})`);
+                  combat.update({ turn: turnIdx });
+                } else {
+                  console.log(`FDCC | updateCombatant | skipping turn reset - active combatant unchanged (turn=${combat.turn})`);
+                }
               }
             }
           }
