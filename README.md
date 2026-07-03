@@ -134,7 +134,7 @@ For bugs, suggestions, or support:
 - **Author**: FR4NC35C0
 - **System**: Fantastic Depths by Forelius
 - **License**: MIT
-- **Thanks to**: To Forelius for providing info about his FaDe sysyem and to The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam for doing final test as players before the fisrst releasest release
+- **Thanks to**: To Forelius for providing info about his FaDe system and to The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam for doing final test as players before the first release
 
 ### Changelog
 #### v1.0.0
@@ -303,7 +303,7 @@ Per bug, suggerimenti o supporto:
 - **Autore**: FR4NC35C0
 - **Sistema**: Fantastic Depths di Forelius
 - **Licenza**: MIT
-- **Ringraziamenti**: A Forelius per aver fornito info su FaDe e a The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam per aver partecipato al test finale della prima release come test players
+- **Ringraziamenti**: A Forelius per aver fornito info su FaDe e a The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam per aver partecipato come giocatori test alla sessione di gioco per la prima release
 
 ### Changelog
 #### v1.0.0
