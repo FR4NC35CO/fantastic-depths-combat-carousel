@@ -134,7 +134,7 @@ For bugs, suggestions, or support:
 - **Author**: FR4NC35C0
 - **System**: Fantastic Depths by Forelius
 - **License**: MIT
-- **Thanks to**: The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam for doing final test as players before the fisrst release
+- **Thanks to**: To Forelius for providing info about his FaDe sysyem and to The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam for doing final test as players before the fisrst releasest release
 
 ### Changelog
 #### v1.0.0
