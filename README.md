@@ -15,7 +15,7 @@ A **Combat Carousel** module for Foundry VTT v14, designed specifically for the 
 
 ### Compatibility
 - **Foundry VTT**: v14.363+
-- **System Requirements**: Fantastic Depths v1.0.13 – v1.2.0
+- **System Requirements**: [Fantastic Depths](https://github.com/Forelius/fantastic-depths) v1.0.13 – v1.1.1
 - **Module Version**: 1.2.0
 - **Socket Support**: Yes (multi-client synchronization)
 
@@ -42,11 +42,11 @@ The module supports 5 distinct initiative modes compatible with Fantastic Depths
 
 | Mode | Description |
 |------|-------------|
-| **simpleIndividual** | Basic individual initiative, no declared actions |
-| **individual** | Individual initiative with slow weapon support |
+| **simpleIndividual** | Basic individual initiative, plus any modifiers |
+| **individual** | Basic individual initiative with the 2-handed weapon rule |
 | **individualChecklist** | Full individual initiative with action declaration required |
-| **group** | Group-based initiative (one roll per side) |
-| **advancedGroup** | Group (2-Part Sequence): separates combat into two phases — fast actions first, then slow weapon actions. Each phase follows the Combat Sequence Checklist (movement → missile → magic → melee) with initiative ordering within each phase |
+| **group** | Group-based initiative with combat actions (one roll per side) |
+| **advancedGroup** | Group (2-Part Sequence): Like teh Group initiative but separates combat into two phases — fast actions first, then slow weapon actions. Each phase follows the Combat Sequence Checklist (movement → missile → magic → melee) with initiative ordering within each phase |
 
 #### 🔄 Round Management Modes
 Three round transition modes supporting different gameplay styles:
@@ -134,6 +134,7 @@ For bugs, suggestions, or support:
 - **Author**: FR4NC35C0
 - **System**: Fantastic Depths by Forelius
 - **License**: MIT
+- **Thanks to**: The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam for doing final test as players before the fisrst release
 
 ### Changelog
 #### v1.0.0
@@ -183,7 +184,7 @@ Modulo **Combat Carousel** per Foundry VTT v14, progettato specificamente per il
 
 ### Compatibilità
 - **Foundry VTT**: v14.363+
-- **Requisiti Sistema**: Fantastic Depths v1.0.13 – v1.2.0
+- **Requisiti Sistema**:  [Fantastic Depths](https://github.com/Forelius/fantastic-depths) v1.0.13 – v1.1.1
 - **Versione Modulo**: 1.2.0
 - **Supporto Socket**: Sì (sincronizzazione multi-client)
 
@@ -211,10 +212,10 @@ Il modulo supporta 5 distinte modalità di iniziativa compatibili con Fantastic 
 | Modalità | Descrizione |
 |----------|-------------|
 | **simpleIndividual** | Iniziativa individuale base, senza azioni dichiarate |
-| **individual** | Iniziativa individuale con supporto armi lente |
-| **individualChecklist** | Iniziativa individuale completa con dichiarazione azioni richiesta |
-| **group** | Iniziativa per gruppi (un tiro per lato) |
-| **advancedGroup** | Gruppo (Sequenza in 2 Fasi): separa il combattimento in due fasi — azioni veloci prima, poi azioni con armi lente. Ogni fase segue la Combat Sequence Checklist (movimento → missile → magia → mischia) con ordine iniziativa all'interno di ogni fase |
+| **individual** | Iniziativa individuale base con regola armi lente |
+| **individualChecklist** | Iniziativa individuale con dichiarazione azioni |
+| **group** | Iniziativa di gruppo (un tiro per fazione) |
+| **advancedGroup** | Gruppo (Sequenza in 2 Fasi): separa il combattimento in due fasi — azioni veloci prima, poi azioni con armi lente. Ogni fase segue la Combat Sequence Checklist (movimento → tiro → magia → mischia) con ordine iniziativa all'interno di ogni fase |
 
 #### 🔄 Modalità di Gestione Round
 Tre modalità di transizione round che supportano diversi stili di gioco:
@@ -302,6 +303,7 @@ Per bug, suggerimenti o supporto:
 - **Autore**: FR4NC35C0
 - **Sistema**: Fantastic Depths di Forelius
 - **Licenza**: MIT
+- **Ringraziamenti**: A Forelius per aver fornito info su FaDe e a The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam per aver partecipato al test finale della prima release come test players
 
 ### Changelog
 #### v1.0.0
