@@ -14,9 +14,9 @@
 A **Combat Carousel** module for Foundry VTT v14, designed specifically for the **Fantastic Depths** system (BECMI/Rules Cyclopedia rules). Replaces the default combat tracker with a visual, interactive horizontal carousel featuring multiple initiative modes, action declaration system, and automated round management.
 
 ### Compatibility
-- **Foundry VTT**: v14.363+
-- **System Requirements**: [Fantastic Depths](https://github.com/Forelius/fantastic-depths) v1.0.13 – v1.1.1
-- **Module Version**: 1.2.0
+- **Foundry VTT**: v14.365
+- **System Requirements**: [Fantastic Depths](https://github.com/Forelius/fantastic-depths) v1.0.13 – v1.1.2
+- **Module Version**: 1.2.1
 - **Socket Support**: Yes (multi-client synchronization)
 
 ### Installation
@@ -134,9 +134,15 @@ For bugs, suggestions, or support:
 - **Author**: FR4NC35C0
 - **System**: Fantastic Depths by Forelius
 - **License**: MIT
-- **Thanks to**: To Forelius for providing info about his FaDe system and to The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam for doing final test as players before the first release
+- **Thanks to**: To Forelius for providing info about his FaDe sysyem and to The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam for doing final test as players before the fisrst release
 
 ### Changelog
+#### v1.2.1
+- **Group Combat Tracker alignment**: Group Combat Checklist cards now follow FaDe's `combat.turns` order, matching the Foundry Combat Tracker.
+- **Active turn synchronization**: The active carousel card and selected canvas token now match the active FaDe combatant at combat start and on every turn change.
+- **Slow weapon indicator**: The 🐌 icon is now shown on Group Combat Checklist cards when the declared action uses an equipped slow weapon.
+- Verified with **Foundry VTT v14.365** and **Fantastic Depths v1.1.2**.
+
 #### v1.0.0
 - Initial stable release
 - Foundry V14.363 compatibility
@@ -183,9 +189,9 @@ For bugs, suggestions, or support:
 Modulo **Combat Carousel** per Foundry VTT v14, progettato specificamente per il sistema **Fantastic Depths** (regole BECMI/Rules Cyclopedia). Sostituisce il tracker di combattimento predefinito con un carosello orizzontale visivo e interattivo, con supporto per multiple modalità di iniziativa, sistema di dichiarazione azioni e gestione automatizzata dei round.
 
 ### Compatibilità
-- **Foundry VTT**: v14.363+
-- **Requisiti Sistema**:  [Fantastic Depths](https://github.com/Forelius/fantastic-depths) v1.0.13 – v1.1.1
-- **Versione Modulo**: 1.2.0
+- **Foundry VTT**: v14.365
+- **Requisiti Sistema**: Fantastic Depths v1.0.13 – v1.1.2
+- **Versione Modulo**: 1.2.1
 - **Supporto Socket**: Sì (sincronizzazione multi-client)
 
 ### Installazione
@@ -303,9 +309,15 @@ Per bug, suggerimenti o supporto:
 - **Autore**: FR4NC35C0
 - **Sistema**: Fantastic Depths di Forelius
 - **Licenza**: MIT
-- **Ringraziamenti**: A Forelius per aver fornito info su FaDe e a The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam per aver partecipato come giocatori test alla sessione di gioco per la prima release
+- **Ringraziamenti**: A Forelius per aver fornito info su FaDe e a The Wiz Hard, Din_Djarin, Zuri, Vulkyratos, Xiliam per aver partecipato al test finale della prima release come test players
 
 ### Changelog
+#### v1.2.1
+- **Allineamento Group Combat Tracker**: Le card di Group Combat Checklist ora seguono l'ordine `combat.turns` di FaDe e corrispondono al Combat Tracker di Foundry.
+- **Sincronizzazione turno attivo**: Card attiva del carosello e token selezionato sulla scena corrispondono ora al combattente FaDe attivo all'avvio del combattimento e a ogni cambio turno.
+- **Indicatore armi lente**: L'icona 🐌 appare ora sulle card Group Combat Checklist quando l'azione dichiarata usa un'arma lenta equipaggiata.
+- Compatibilità verificata con **Foundry VTT v14.365** e **Fantastic Depths v1.1.2**.
+
 #### v1.0.0
 - Rilascio stabile iniziale
 - Compatibilità Foundry V14.363
