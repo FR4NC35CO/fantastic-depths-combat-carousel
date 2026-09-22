@@ -137,7 +137,7 @@ export class CombatCarousel {
     const savedIdx = (combat ?? game.combat)?.getFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx');
     this._sortedTurnIdx = (typeof savedIdx === 'number') ? savedIdx : 0;
     // In two-phase mode, align with the current Foundry combat.turn instead of the saved flag
-    if (this.isTwoPhaseMode && this.combat?.turns?.length) {
+    if (this.isGroupMode && this.combat?.turns?.length) {
       this._sortedTurnIdx = this._getSortedIdxForTurn(this.combat.turn ?? 0);
     }
     // Shadow state for NPC actions synced via socket (bypasses Foundry permission restrictions)
@@ -147,7 +147,7 @@ export class CombatCarousel {
   get sortedCombatants() {
     // In individual, individualChecklist and simpleIndividual modes, follow combat.turns order
     // (which FaDe sorts by action phase then initiative, matching the Combat Sequence Checklist)
-    if (this.initiativeMode === 'individual' || this.initiativeMode === 'individualChecklist' || this.initiativeMode === 'simpleIndividual') {
+    if (this.initiativeMode === 'individual' || this.initiativeMode === 'individualChecklist' || this.initiativeMode === 'simpleIndividual' || this.isGroupMode) {
       if (this.combat?.turns?.length) {
         const seen = new Set();
         const ordered = [];
@@ -1859,7 +1859,7 @@ export class CombatCarousel {
         if (!skipTurnChange) {
           const active = combat.combatant;
           _log(`↷ TURN CHANGE | round=${combat.round} turn=${updates.turn} | active=${active?.name ?? '?'} (init: ${active?.initiative ?? '?'})`);
-          if (this.isTwoPhaseMode) {
+          if (this.isGroupMode) {
             // Mirror the core tracker exactly: the active combatant is the source of truth.
             this._sortedTurnIdx = this._getSortedIdxForTurn(updates.turn);
             this.refreshCards();
@@ -1985,9 +1985,8 @@ export class CombatCarousel {
     _log('▶ START COMBAT | combatants:', Array.from(this.combat.combatants).map(c => `${c.name} (${c.token?.disposition === 1 ? 'PC' : 'NPC'})`).join(', '));
     _log('  savedActions:', Object.fromEntries(savedActions));
     await this.combat.startCombat();
-    // Reset internal sorted index to start from first combatant
-    this._sortedTurnIdx = 0;
-    if (game.user.isGM) this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', 0);
+    this._sortedTurnIdx = this._getSortedIdxForTurn(this.combat.turn ?? 0);
+    if (game.user.isGM) this.combat.setFlag('fantastic-depths-combat-carousel', 'sortedTurnIdx', this._sortedTurnIdx);
     // Wait a tick for FaDe's async reset to finish, then restore
     setTimeout(async () => {
       const restores = [];

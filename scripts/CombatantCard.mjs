@@ -114,7 +114,7 @@ export class CombatantCard {
     if (!carousel) return false;
     const mode = carousel.initiativeMode;
     // For advancedGroup and individualChecklist: check declared action
-    if (mode === 'advancedGroup' || mode === 'individualChecklist') {
+    if (mode === 'group' || mode === 'advancedGroup' || mode === 'individualChecklist') {
       const action = this.actor?.system?.combat?.declaredAction;
       if (action !== 'attack' && action !== 'fire' && action !== 'throw') return false;
     }
