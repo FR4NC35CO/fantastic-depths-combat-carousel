@@ -589,8 +589,8 @@
   animation: rollPcsGlow 1.2s ease-in-out infinite;
 }
 
-/* ============ START COMBAT BUTTON ============ */
-.carousel-controls button[data-action="start-combat"]:disabled {
+/* ============ DISABLED CONTROLS ============ */
+.carousel-controls button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
