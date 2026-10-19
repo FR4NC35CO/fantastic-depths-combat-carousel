@@ -1,4 +1,5 @@
 import { CombatantCard } from './CombatantCard.mjs';
+import { forceActionReselect } from './settings.mjs';
 
 const MODULE_ID = 'fantastic-depths-combat-carousel';
 
@@ -349,12 +350,13 @@ export class CombatCarousel {
     </div>`;
 
     if (isGM) {
+      const preStartDisabled = this.combat.started ? '' : ' disabled';
       html += `
       <div class="carousel-controls left">
-        <button type="button" data-action="previous-turn" data-tooltip="${game.i18n.localize('FDCC.Controls.PrevTurn')}">
+        <button type="button" data-action="previous-turn" data-tooltip="${game.i18n.localize('FDCC.Controls.PrevTurn')}"${preStartDisabled}>
           <i class="fas fa-backward-step"></i>
         </button>
-        <button type="button" data-action="previous-round" data-tooltip="${game.i18n.localize('FDCC.Controls.PrevRound')}">
+        <button type="button" data-action="previous-round" data-tooltip="${game.i18n.localize('FDCC.Controls.PrevRound')}"${preStartDisabled}>
           <i class="fas fa-backward"></i>
         </button>
       </div>`;
@@ -364,33 +366,34 @@ export class CombatCarousel {
 
     if (isGM) {
       const showGMRollPcs = this.isGroupMode ? '' : 'display:none';
+      const preStartDisabled = this.combat.started ? '' : ' disabled';
       html += `
       <div class="carousel-controls right">
         <div class="controls-column">
-          <button type="button" data-action="roll-all" data-tooltip="${game.i18n.localize('FDCC.Controls.RollAll')}">
+          <button type="button" data-action="roll-all" data-tooltip="${game.i18n.localize('FDCC.Controls.RollAll')}"${preStartDisabled}>
             <i class="fas fa-dice"></i>
           </button>
           <button type="button" data-action="roll-pcs" class="roll-pcs-btn" data-tooltip="${game.i18n.localize('FDCC.Controls.RollPCs')}" style="${showGMRollPcs}" disabled>
             <i class="fas fa-dice"></i>
           </button>
-          <button type="button" data-action="roll-npc" data-tooltip="${game.i18n.localize('FDCC.Controls.RollNPC')}">
+          <button type="button" data-action="roll-npc" data-tooltip="${game.i18n.localize('FDCC.Controls.RollNPC')}"${preStartDisabled}>
             <i class="fas fa-users"></i>
           </button>
-          <button type="button" data-action="reset-initiative" data-tooltip="${game.i18n.localize('FDCC.Controls.ResetInitiative')}">
+          <button type="button" data-action="reset-initiative" data-tooltip="${game.i18n.localize('FDCC.Controls.ResetInitiative')}"${preStartDisabled}>
             <i class="fas fa-rotate-left"></i>
+          </button>
+        </div>
+        <div class="controls-column">
+          <button type="button" data-action="next-turn" data-tooltip="${game.i18n.localize('FDCC.Controls.NextTurn')}"${preStartDisabled}>
+            <i class="fas fa-forward-step"></i>
+          </button>
+          <button type="button" data-action="next-round" data-tooltip="${game.i18n.localize('FDCC.Controls.NextRound')}"${preStartDisabled}>
+            <i class="fas fa-forward"></i>
           </button>
           <button type="button" data-action="start-combat" data-tooltip="${game.i18n.localize('FDCC.Controls.StartCombat')}" style="${this.combat.started ? 'display:none' : ''}">
             <i class="fas fa-swords"></i>
           </button>
-        </div>
-        <div class="controls-column">
-          <button type="button" data-action="next-turn" data-tooltip="${game.i18n.localize('FDCC.Controls.NextTurn')}">
-            <i class="fas fa-forward-step"></i>
-          </button>
-          <button type="button" data-action="next-round" data-tooltip="${game.i18n.localize('FDCC.Controls.NextRound')}">
-            <i class="fas fa-forward"></i>
-          </button>
-          <button type="button" data-action="end-combat" data-tooltip="${game.i18n.localize('FDCC.Controls.EndCombat')}">
+          <button type="button" data-action="end-combat" data-tooltip="${game.i18n.localize('FDCC.Controls.EndCombat')}" style="${this.combat.started ? '' : 'display:none'}">
             <i class="fas fa-xmark"></i>
           </button>
         </div>
@@ -677,10 +680,23 @@ export class CombatCarousel {
   }
 
   _updateStartEndButtons() {
+    const started = !!this.combat?.started;
     const startBtn = this.element?.querySelector('[data-action="start-combat"]');
     const endBtn = this.element?.querySelector('[data-action="end-combat"]');
-    if (startBtn) startBtn.style.display = this.combat.started ? 'none' : '';
-    if (endBtn) endBtn.style.display = '';
+    if (startBtn) startBtn.style.display = started ? 'none' : '';
+    if (endBtn) endBtn.style.display = started ? '' : 'none';
+
+    // Turn/round/initiative controls only apply after combat has begun.
+    const preStartActions = [
+      'previous-turn', 'previous-round', 'next-turn', 'next-round',
+      'roll-all', 'roll-npc', 'reset-initiative'
+    ];
+    for (const action of preStartActions) {
+      const btn = this.element?.querySelector(`[data-action="${action}"]`);
+      if (!btn) continue;
+      btn.disabled = !started;
+      if (!started) btn.classList.remove('roll-all-ready', 'roll-npc-ready');
+    }
   }
 
   _activateControlListeners() {
@@ -755,10 +771,8 @@ export class CombatCarousel {
       case 'next-turn':
       case 'previous-round':
       case 'next-round':
-        if (action === 'previous-turn' || action === 'previous-round') {
-          // Always allow going back if combat has started
-          if (!this.combat.started) return;
-        } else if (!this._hasInitiativeRolled()) {
+        if (!this.combat.started) return;
+        if ((action === 'next-turn' || action === 'next-round') && !this._hasInitiativeRolled()) {
           ui.notifications.warn(game.i18n.localize('FDCC.WarnNoInitiative'));
           return;
         }
@@ -768,6 +782,7 @@ export class CombatCarousel {
         else if (action === 'next-round') this.combat.nextRound();
         break;
       case 'roll-all':
+        if (!this.combat.started) return;
         // Block roll-all in hold mode from round 2+
         {
           let nextRound = 'reset';
@@ -804,6 +819,7 @@ export class CombatCarousel {
         }
         break;
       case 'roll-npc':
+        if (!this.combat.started) return;
         // Block roll-npc in hold mode from round 2+
         {
           let nextRound = 'reset';
@@ -820,6 +836,7 @@ export class CombatCarousel {
         this._rollNPCInitiative();
         break;
       case 'roll-pcs':
+        if (!this.combat.started) return;
         // Block roll-pcs in hold mode from round 2+
         {
           let nextRound = 'reset';
@@ -836,27 +853,12 @@ export class CombatCarousel {
         this._rollPlayerInitiative();
         break;
       case 'reset-initiative':
+        if (!this.combat.started) return;
         Promise.all(
           this.combat.combatants.map(c => c.update({ initiative: null }))
         ).then(() => this.refreshCards());
         break;
       case 'start-combat':
-        if ((this._pendingTieRerolls?.size ?? 0) > 0) {
-          ui.notifications.warn(game.i18n.localize('FDCC.WarnTiesMustBeResolved'));
-          return;
-        }
-        if (this._hasUnselectedActions() && !this._hasInitiativeRolled()) {
-          ui.notifications.warn(game.i18n.localize('FDCC.WarnActionsAndInitiative'));
-          return;
-        }
-        if (this._hasUnselectedActions()) {
-          ui.notifications.warn(game.i18n.localize('FDCC.WarnActionsNotSelected'));
-          return;
-        }
-        if (!this._hasInitiativeRolled()) {
-          ui.notifications.warn(game.i18n.localize('FDCC.WarnNoInitiative'));
-          return;
-        }
         this._startCombatPreservingActions();
         break;
       case 'end-combat':
@@ -1225,6 +1227,11 @@ export class CombatCarousel {
   _updateRollPCsButton() {
     const btn = this.element?.querySelector('[data-action="roll-pcs"]');
     if (!btn) return;
+    if (!this.combat?.started) {
+      btn.disabled = true;
+      btn.classList.remove('roll-pcs-ready');
+      return;
+    }
     // In hold mode from round 2+: block rolling initiative (keep previous round values)
     // Round 0/1: allow normal initiative rolling
     let nextRound = 'reset';
@@ -1269,6 +1276,21 @@ export class CombatCarousel {
     const npcBtn = this.element?.querySelector('[data-action="roll-npc"]');
     const allBtn = this.element?.querySelector('[data-action="roll-all"]');
     const gmPcsBtn = this.element?.querySelector('.carousel-controls.right [data-action="roll-pcs"]');
+    if (!this.combat?.started) {
+      if (npcBtn) {
+        npcBtn.disabled = true;
+        npcBtn.classList.remove('roll-npc-ready');
+      }
+      if (allBtn) {
+        allBtn.disabled = true;
+        allBtn.classList.remove('roll-all-ready');
+      }
+      if (gmPcsBtn) {
+        gmPcsBtn.disabled = true;
+        gmPcsBtn.classList.remove('roll-pcs-ready');
+      }
+      return;
+    }
     // In hold mode from round 2+: block rolling initiative - no glow on buttons
     // Round 0/1: allow normal initiative rolling
     let nextRound = 'reset';
@@ -1335,21 +1357,9 @@ export class CombatCarousel {
   _updateStartCombatButton() {
     const btn = this.element?.querySelector('[data-action="start-combat"]');
     if (!btn) return;
-    const allActionsChosen = !this._hasUnselectedActions();
-    const allInitiative = this._allInitiativeRolled();
-    const hasTies = (this._pendingTieRerolls?.size ?? 0) > 0;
-    const ready = allActionsChosen && allInitiative && !hasTies && !this.combat.started;
-    if (ready) {
-      btn.disabled = false;
-      btn.classList.add('start-combat-ready');
-    } else if (hasTies) {
-      // Keep clickable so the ties warning can be shown, but not visually ready
-      btn.disabled = false;
-      btn.classList.remove('start-combat-ready');
-    } else {
-      btn.disabled = true;
-      btn.classList.remove('start-combat-ready');
-    }
+    // Start is only shown before combat begins; keep it enabled whenever visible.
+    btn.disabled = false;
+    btn.classList.toggle('start-combat-ready', !this.combat.started);
   }
 
   _nextTurn() {
@@ -1734,9 +1744,8 @@ export class CombatCarousel {
       
       _log(`preUpdateActor | ${actor.name} | newAction=${newAction} | currentAction=${currentAction} | from=${user?.name} | inPending=${inPending} | _roundChanging=${this._roundChanging}`);
       
-      // BLOCK: During round change, prevent FaDe from auto-setting attack/fire
-      // This happens when FaDe's roundReset sets default weapon action
-      if (this._roundChanging && inPending === true && (newAction === 'attack' || newAction === 'fire')) {
+      // BLOCK: When forcing re-selection, prevent FaDe from auto-setting attack/fire during round change
+      if (forceActionReselect() && this._roundChanging && inPending === true && (newAction === 'attack' || newAction === 'fire')) {
         _warn(`preUpdateActor | BLOCKED | ${actor.name} | FaDe auto-${newAction} prevented during round change`);
         return false; // Block the update
       }
@@ -1886,13 +1895,14 @@ export class CombatCarousel {
         this._playRoundSound();
         let nextRound = 'reset';
         try { nextRound = game.settings.get(game.system.id, 'nextRound') ?? 'reset'; } catch(e) {}
-        _log(`══ ROUND ${updates.round} ══ | mode=${this.initiativeMode} | nextRound=${nextRound} | isGM=${game.user.isGM}`);
+        const requireReselect = forceActionReselect();
+        _log(`══ ROUND ${updates.round} ══ | mode=${this.initiativeMode} | nextRound=${nextRound} | isGM=${game.user.isGM} | forceActionReselect=${requireReselect}`);
         this._pendingTieRerolls.clear();
         this._npcActions.clear(); // Clear shadow state from previous round
         this._autoRolledRound = null;
         this._autoRolling = false;
         this._initiativeClearing = false;
-        this._roundChanging = true;
+        if (requireReselect) this._roundChanging = true;
         
         // Clear waiting flags for all combatants at round start
         if (game.user.isGM) {
@@ -1902,7 +1912,7 @@ export class CombatCarousel {
         }
         // _roundChanging will be cleared by the deferred setTimeout below (non-GM) or by main.mjs patch (GM)
         // Non-GM clients populate _resetPendingIds here (GM already did it in main.mjs nextRound patch)
-        if (!game.user.isGM && (nextRound === 'reroll' || nextRound === 'reset' || nextRound === 'hold')) {
+        if (requireReselect && !game.user.isGM && (nextRound === 'reroll' || nextRound === 'reset' || nextRound === 'hold')) {
           // CRITICAL FIX: Only include combatants who haven't chosen an action yet
           // This prevents race condition where socket action events arrive before updateCombat
           const pendingIds = new Set();
@@ -1927,7 +1937,7 @@ export class CombatCarousel {
         // force immediate refresh with all combatants marked as pending so declaredActions show "Seleziona..." (yellow)
         // This applies to individual modes AND group modes
         _log(`updateCombat | GM CHECK | mode=${this.initiativeMode} | isGroup=${this.isGroupMode} | nextRound=${nextRound}`);
-        if (game.user.isGM && (this.initiativeMode === 'individual' || this.initiativeMode === 'individualChecklist' || this.initiativeMode === 'simpleIndividual' || this.isGroupMode) && (nextRound === 'reroll' || nextRound === 'reset' || nextRound === 'hold')) {
+        if (requireReselect && game.user.isGM && (this.initiativeMode === 'individual' || this.initiativeMode === 'individualChecklist' || this.initiativeMode === 'simpleIndividual' || this.isGroupMode) && (nextRound === 'reroll' || nextRound === 'reset' || nextRound === 'hold')) {
           this._resetPendingIds = new Set(Array.from(this.combat.combatants).map(c => c.id));
           _log(`updateCombat | GM _resetPendingIds (${this._resetPendingIds.size}) | mode=${this.initiativeMode}`);
           // Immediate refresh to show "Seleziona..." (yellow borders) before actor updates propagate
@@ -1938,6 +1948,9 @@ export class CombatCarousel {
             _log(`updateCombat | GM deferred refresh after round change | mode=${this.initiativeMode}`);
             this.refreshCards();
           }, 1500);
+        } else if (!requireReselect) {
+          this._roundChanging = false;
+          this._resetPendingIds?.clear();
         }
         // For individual modes: fix turn=0 so no card appears "active" at start of new round
         if ((this.initiativeMode === 'individual' || this.initiativeMode === 'individualChecklist' || this.initiativeMode === 'simpleIndividual') && game.user.isGM) {

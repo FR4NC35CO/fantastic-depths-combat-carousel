@@ -8,7 +8,7 @@ export function registerSettings() {
     config: true,
     type: Number,
     default: 80,
-    range: { min: 80, max: 150, step: 5 },
+    range: { min: 60, max: 150, step: 5 },
     onChange: (value) => {
       const panel = document.getElementById('combat-carousel-panel');
       if (panel) panel.style.setProperty('--portrait-size', `${value}px`);
@@ -42,6 +42,15 @@ export function registerSettings() {
     default: true
   });
 
+  game.settings.register(MODULE_ID, 'forceActionReselect', {
+    name: 'FDCC.Settings.ForceActionReselectName',
+    hint: 'FDCC.Settings.ForceActionReselectHint',
+    scope: 'world',
+    config: true,
+    type: Boolean,
+    default: false
+  });
+
   game.settings.register(MODULE_ID, 'debugMode', {
     name: 'FDCC.Settings.DebugModeName',
     hint: 'FDCC.Settings.DebugModeHint',
@@ -50,4 +59,9 @@ export function registerSettings() {
     type: Boolean,
     default: false
   });
+}
+
+/** When true, each new round clears actions to force re-declaration. Default false = FaDe weapon defaults. */
+export function forceActionReselect() {
+  try { return game.settings.get(MODULE_ID, 'forceActionReselect') === true; } catch (e) { return false; }
 }
