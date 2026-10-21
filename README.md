@@ -15,8 +15,8 @@ A **Combat Carousel** module for Foundry VTT v14, designed specifically for the 
 
 ### Compatibility
 - **Foundry VTT**: v14.368
-- **System Requirements**: [Fantastic Depths](https://github.com/Forelius/fantastic-depths) v1.0.13 – v1.2.8
-- **Module Version**: 1.2.8
+- **System Requirements**: [Fantastic Depths](https://github.com/Forelius/fantastic-depths)
+- **Module Version**: 1.3.6
 - **Socket Support**: Yes (multi-client synchronization)
 
 ### Installation
@@ -193,8 +193,8 @@ Modulo **Combat Carousel** per Foundry VTT v14, progettato specificamente per il
 
 ### Compatibilità
 - **Foundry VTT**: v14.368
-- **Requisiti Sistema**: Fantastic Depths v1.0.13 – v1.2.8
-- **Versione Modulo**: 1.2.8
+- **Requisiti Sistema**: Fantastic Depths
+- **Versione Modulo**: 1.3.6
 - **Supporto Socket**: Sì (sincronizzazione multi-client)
 
 ### Installazione
